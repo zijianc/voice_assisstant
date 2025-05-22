@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.vscode/
+.env
+*.mp3
+colcon*
+models/
+install/
+build/
+log/
+.devcontainer/
+*.jpg

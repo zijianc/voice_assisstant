@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>my_voice_assistant</name>
+  <version>0.0.1</version>
+  <description>ROS2 voice assistant using Vosk for STT</description>
+  <maintainer email="youremail@example.com">zijian</maintainer>
+  <license>Apache License 2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>vosk</exec_depend>
+  <exec_depend>sounddevice</exec_depend>
+  <exec_depend>pyaudio</exec_depend>
+
+  <test_depend>pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

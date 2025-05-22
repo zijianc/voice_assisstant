@@ -1,4 +1,4 @@
-# voice_assisstant
+
 # Voice Assistant in Docker Environment (ROS 2)
 
 This guide outlines the necessary steps to build and run a voice assistant inside a Docker container using ROS 2.
@@ -42,6 +42,10 @@ ros2 run my_voice_assistant rl_stt_node
 
 # Run text-to-speech (TTS) node
 ros2 run my_voice_assistant tts_node
+
+#Run openai tts
+ros2 run my_voice_assistant openai_tts_node
+
 ```
 
 ---
@@ -105,5 +109,5 @@ Then run it with:
 
 ```bash
 chmod +x rebuild.sh  # Grant permission
-./rebuild.sh         # Execute rebuild anytime
+source rebuild.sh         # Execute rebuild anytime
 ```
