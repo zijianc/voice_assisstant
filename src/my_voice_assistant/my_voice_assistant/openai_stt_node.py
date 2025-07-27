@@ -4,43 +4,51 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool
 import pyaudio
-import vosk
 import queue
 import threading
 import time
 import difflib
-from ament_index_python.packages import get_package_share_directory
+import wave
+import tempfile
+import openai
+import tenacity
+from dotenv import load_dotenv
+
+# 加载 .env 文件
+load_dotenv()
 
 # -----------------------------------------------------------------------------
 # Audio configuration
-SAMPLE_RATE = 24000  # Vosk English model expects 24 kHz
+SAMPLE_RATE = 24000          # Whisper 默认 24 kHz 也 OK 16 kHz
+CHUNK_SECONDS = 5            # 每块时长
+MODEL_NAME = os.getenv("OPENAI_STT_MODEL", "whisper-1")  # 或 gpt-4o-mini-transcribe
 # -----------------------------------------------------------------------------
 
-class VoskSTTNode(Node):
+class OpenAISTTNode(Node):
     def __init__(self):
-        super().__init__('vosk_stt_node')
+        super().__init__('openai_stt_node')
+        
+        # 初始化 OpenAI 客户端
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("请设置 OPENAI_API_KEY 环境变量")
+        
+        self.openai_client = openai.OpenAI(api_key=api_key)
+        
         # 创建发布者，发布识别结果到话题 'speech_text'
         self.publisher_ = self.create_publisher(String, 'speech_text', 10)
         # 订阅 TTS 状态消息（假设 TTS 节点发布 Bool 消息，True 表示正在播放）
         self.tts_status_sub = self.create_subscription(Bool, 'tts_status', self.tts_status_callback, 10)
         self.listening = True  # 用于控制是否监听
 
-        # 获取当前文件所在目录，设置英语模型路径
-        model_path_en = os.environ.get("VOSK_MODEL_EN_PATH",
-                                       "/workspaces/ros2_ws/src/my_voice_assistant/models/vosk-model-en-us-0.22")
-        self.get_logger().info("加载英语模型：{}".format(model_path_en))
-        self.model_en = vosk.Model(model_path_en)
-        self.recognizer_en = vosk.KaldiRecognizer(self.model_en, SAMPLE_RATE)
-
         # 初始化音频输入
-        self.last_partial = ""
         self.audio = pyaudio.PyAudio()
         self.stream = self.audio.open(
             format=pyaudio.paInt16,
             channels=1,
             rate=SAMPLE_RATE,
             input=True,
-            frames_per_buffer=2048  # ≈85 ms at 24 kHz
+            frames_per_buffer=2048  # ≈85 ms at 24 kHz
         )
         self.stream.start_stream()
         self.get_logger().info("开始监听麦克风...")
@@ -94,32 +102,78 @@ class VoskSTTNode(Node):
                 time.sleep(0.05)
 
     def recognition_loop(self):
+        pcm_buf = bytearray()
+        last_publish = time.time()
+
         while rclpy.ok():
+            # 检查暂停
             if not self.listening:
-                # 暂停识别时，短暂等待
                 time.sleep(0.1)
                 continue
+
+            # 从队列拿数据
             try:
                 data = self.audio_queue.get(timeout=1)
             except queue.Empty:
                 continue
+            
+            pcm_buf.extend(data)
 
-            if self.recognizer_en.AcceptWaveform(data):
-                result = json.loads(self.recognizer_en.Result())
-                text = result.get("text", "").strip()
-                if text:
-                    self.process_recognized_text(text)
-            else:
-                partial = json.loads(self.recognizer_en.PartialResult())
-                partial_text = partial.get("partial", "").strip()
-                if partial_text and partial_text != self.last_partial:
-                    self.last_partial = partial_text
-                    self.get_logger().info("部分识别: " + partial_text)
-            time.sleep(0.01)
+            # 到达块大小就发送
+            current_time = time.time()
+            if len(pcm_buf) >= SAMPLE_RATE * 2 * CHUNK_SECONDS or (current_time - last_publish) >= CHUNK_SECONDS:
+                if len(pcm_buf) > 0:
+                    try:
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
+                            self.write_wav(tmp.name, pcm_buf)
+                            transcript = self.transcribe_file(tmp.name)
+                            if transcript:
+                                self.process_recognized_text(transcript)
+                    except Exception as e:
+                        self.get_logger().error("转录错误: {}".format(e))
+                    
+                    pcm_buf.clear()
+                    last_publish = current_time
+
+    def write_wav(self, path: str, pcm_bytes: bytes):
+        """写 WAV 工具"""
+        with wave.open(path, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)          # paInt16
+            wf.setframerate(SAMPLE_RATE)
+            wf.writeframes(pcm_bytes)
+
+    @tenacity.retry(stop=tenacity.stop_after_attempt(3),
+                    wait=tenacity.wait_exponential(multiplier=1, min=1, max=10))
+    def transcribe_file(self, fname: str) -> str:
+        """Whisper 调用，带重试"""
+        try:
+            with open(fname, "rb") as f:
+                response = self.openai_client.audio.transcriptions.create(
+                    model=MODEL_NAME,
+                    file=f,
+                    language="en",
+                    prompt="The captain is the wakeword.",
+                    temperature=0,
+                    response_format="text"   # 纯文本
+                )
+            return response.strip() if isinstance(response, str) else response.strip()
+        except Exception as e:
+            self.get_logger().error("OpenAI API 调用失败: {}".format(e))
+            return ""
+
+    def destroy_node(self):
+        """清理资源"""
+        if hasattr(self, 'stream'):
+            self.stream.stop_stream()
+            self.stream.close()
+        if hasattr(self, 'audio'):
+            self.audio.terminate()
+        super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
-    node = VoskSTTNode()
+    node = OpenAISTTNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -129,4 +183,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-       

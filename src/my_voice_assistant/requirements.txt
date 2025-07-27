@@ -5,3 +5,5 @@ python-dotenv==1.1.0
 setuptools==75.8.0
 vosk==0.3.45
 websocket_client==1.8.0
+tenacity
+pygame

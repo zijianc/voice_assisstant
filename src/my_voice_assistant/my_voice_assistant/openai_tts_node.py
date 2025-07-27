@@ -86,35 +86,129 @@ class OpenAITTSNode(Node):
                 speed=0.9 # 可选：0.5-2.0
             )
 
-            # 保存音频文件
-            temp_file = tempfile.mktemp(suffix=".mp3")
-            with open(temp_file, "wb") as f:
-                f.write(response.content)
+            # 检查是否启用文件保存模式
+            save_mode = os.environ.get("TTS_SAVE_MODE", "false").lower() == "true"
+            
+            if save_mode:
+                # 保存到持久目录
+                import datetime
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                save_dir = "/workspaces/ros2_ws/audio_output"
+                os.makedirs(save_dir, exist_ok=True)
+                
+                audio_file = os.path.join(save_dir, f"tts_{timestamp}.mp3")
+                with open(audio_file, "wb") as f:
+                    f.write(response.content)
+                
+                self.get_logger().info(f"🎵 音频文件已保存: {audio_file}")
+                self.get_logger().info("💡 在宿主机上播放此文件来听取音频")
+                
+                # 仍然尝试播放
+                self.play_queue.put(audio_file)
+            else:
+                # 原有的临时文件模式
+                temp_file = tempfile.mktemp(suffix=".mp3")
+                with open(temp_file, "wb") as f:
+                    f.write(response.content)
 
-            self.get_logger().info(f"已生成音频文件: {temp_file}")
-            self.play_queue.put(temp_file)
+                self.get_logger().info(f"已生成音频文件: {temp_file}")
+                self.play_queue.put(temp_file)
+                
         except Exception as e:
             self.get_logger().error("调用 OpenAI TTS API 出错: " + str(e))
 
+    # def play_worker(self):
+    #     while rclpy.ok():
+    #         try:
+    #             temp_file = self.play_queue.get(timeout=1)
+    #             # self.get_logger().info(f"播放队列大小: {self.play_queue.qsize()}")
+    #             # self.get_logger().info(f"准备播放语音片段: {temp_file}")
+    #             try:
+    #                 self.get_logger().info(f"使用 mpg123 播放: {temp_file}")
+    #                 process = subprocess.Popen(["mpg123", temp_file])
+    #                 process.wait()
+    #                 time.sleep(0.1)  # 更紧凑的播放间隔
+    #                 # self.get_logger().info(f"mpg123 播放完成: {temp_file}")
+    #             except Exception as e:
+    #                 self.get_logger().error(f"使用 mpg123 播放失败: {str(e)}")
+    #             os.remove(temp_file)
+    #             self.get_logger().info(f"删除临时文件: {temp_file}")
+    #         except queue.Empty:
+    #             continue
     def play_worker(self):
         while rclpy.ok():
             try:
                 temp_file = self.play_queue.get(timeout=1)
-                # self.get_logger().info(f"播放队列大小: {self.play_queue.qsize()}")
-                # self.get_logger().info(f"准备播放语音片段: {temp_file}")
+                self.get_logger().info(f"[PLAY] 准备播放语音片段: {temp_file}")
+                
+                # 只使用一个播放器，避免重复播放
+                played = False
+                
+                # 首先尝试使用 pygame
                 try:
-                    self.get_logger().info(f"使用 mpg123 播放: {temp_file}")
-                    process = subprocess.Popen(["mpg123", temp_file])
-                    process.wait()
-                    time.sleep(0.1)  # 更紧凑的播放间隔
-                    # self.get_logger().info(f"mpg123 播放完成: {temp_file}")
+                    import pygame
+                    # 确保mixer完全初始化
+                    pygame.mixer.pre_init(frequency=22050, size=-16, channels=2, buffer=512)
+                    pygame.mixer.init()
+                    
+                    self.get_logger().info(f"[PLAY] 使用 pygame 播放: {temp_file}")
+                    pygame.mixer.music.load(temp_file)
+                    pygame.mixer.music.play()
+                    
+                    # 等待播放完成
+                    while pygame.mixer.music.get_busy():
+                        pygame.time.wait(100)
+                    
+                    # 完全停止并清理
+                    pygame.mixer.music.stop()
+                    pygame.mixer.quit()
+                    
+                    self.get_logger().info(f"[PLAY] pygame 播放完成: {temp_file}")
+                    played = True
+                    
+                except ImportError:
+                    self.get_logger().debug("[PLAY] pygame 不可用")
                 except Exception as e:
-                    self.get_logger().error(f"使用 mpg123 播放失败: {str(e)}")
-                os.remove(temp_file)
-                self.get_logger().info(f"删除临时文件: {temp_file}")
+                    self.get_logger().warn(f"[PLAY] pygame 播放失败: {str(e)}")
+                
+                # 只有在 pygame 完全失败时才尝试备选方案
+                if not played:
+                    try:
+                        import playsound
+                        self.get_logger().info(f"[PLAY] 使用 playsound 播放: {temp_file}")
+                        playsound.playsound(temp_file)
+                        self.get_logger().info(f"[PLAY] playsound 播放完成: {temp_file}")
+                        played = True
+                    except ImportError:
+                        self.get_logger().debug("[PLAY] playsound 不可用")
+                    except Exception as e:
+                        self.get_logger().debug(f"[PLAY] playsound 播放失败: {str(e)}")
+                
+                if not played:
+                    # 如果没有可用的播放器，只记录文件生成成功
+                    self.get_logger().info(f"[PLAY] 音频文件已生成但无可用播放器: {temp_file}")
+                    self.get_logger().info("[PLAY] 请安装音频播放器或在有音频输出的环境中运行")
+                    
             except queue.Empty:
                 continue
- 
+            except Exception as e:
+                self.get_logger().error(f"[PLAY] 播放工作线程出错: {str(e)}")
+            finally:
+                # 清理临时文件 (但保留持久保存的文件)
+                save_mode = os.environ.get("TTS_SAVE_MODE", "false").lower() == "true"
+                
+                try:
+                    if 'temp_file' in locals() and os.path.exists(temp_file):
+                        # 只有在非保存模式或者是临时文件时才删除
+                        if not save_mode or temp_file.startswith('/tmp/'):
+                            os.remove(temp_file)
+                            self.get_logger().info(f"[CLEANUP] 删除临时文件: {temp_file}")
+                        else:
+                            self.get_logger().debug(f"[CLEANUP] 保留音频文件: {temp_file}")
+                except Exception as e:
+                    self.get_logger().warn(f"[CLEANUP] 清理临时文件失败: {str(e)}")
+
+    
 def main(args=None):
     rclpy.init(args=args)
     node = OpenAITTSNode()

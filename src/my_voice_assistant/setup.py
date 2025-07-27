@@ -12,7 +12,7 @@ setup(
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         (os.path.join('share', package_name), ['package.xml']),
     ],
-    install_requires=['setuptools', 'vosk', 'sounddevice', 'pyaudio','python-dotenv'],
+    install_requires=['setuptools', 'vosk', 'sounddevice', 'pyaudio','python-dotenv', 'openai', 'tenacity', 'websocket-client', 'numpy'],
     zip_safe=True,
     maintainer='zijian',
     maintainer_email='youremail@example.com',
@@ -23,12 +23,13 @@ setup(
         'console_scripts': [
             'vosk_stt_node = my_voice_assistant.vosk_stt_node:main',
             'llm_node = my_voice_assistant.llm_node:main',
-            'deepseek_llm_node = my_voice_assistant.deepseek_llm_node:main',
             'tts_node = my_voice_assistant.tts_node:main',
             'realtime_llm_node = my_voice_assistant.realtime_llm_node:main',
             'test_realtime_llm = my_voice_assistant.test_realtime_llm:main',
             'rl_stt_node = my_voice_assistant.realtime_stt:main',
             'openai_tts_node = my_voice_assistant.openai_tts_node:main',
+            'openai_stt_node = my_voice_assistant.openai_stt_node:main',
+            'realtime_transcription_node = my_voice_assistant.realtime_stt_node:main',
         ],
     },
 )

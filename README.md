@@ -1,7 +1,48 @@
 
 # Voice Assistant in Docker Environment (ROS 2)
 
-This guide outlines the necessary steps to build and run a voice assistant inside a Docker container using ROS 2.
+This guide outlines the ## 🔧 Environment Variables
+
+For OpenAI-based nodes, you need to set the following environment variables:
+
+```bash
+# Required for openai_stt_node and openai_tts_node
+export OPENAI_API_KEY="your-openai-api-key"
+
+# Optional: specify the STT model (default: whisper-1)
+export OPENAI_STT_MODEL="whisper-1"  # or "gpt-4o-mini-transcribe"
+
+# Optional: enable audio file saving mode (useful in Docker)
+export TTS_SAVE_MODE=true  # saves audio files to audio_output/ directory
+```
+
+## 🔊 Audio Output Solutions
+
+If you can't hear audio in Docker (common with headphones):
+
+```bash
+# Option 1: Use file saving mode
+./start_openai_tts.sh --save-files
+# Audio files will be saved to /workspaces/ros2_ws/audio_output/
+# Play these files on your host machine
+
+# Option 2: Test audio file generation
+./test_audio_save.sh
+# Then check the audio_output/ directory for generated MP3 files
+```teps to build and run a voice assistant inside a Docker container using ROS 2.
+
+## 🎤 语音助手系统演示
+
+```bash
+# 完整系统演示
+./demo_voice_assistant.sh
+
+# 这个脚本将演示:
+# 1. 唤醒词检测 ('Hi Captain', 'Hey Captain', 'Hello Captain')
+# 2. LLM 流式响应处理
+# 3. OpenAI TTS 语音生成和播放
+# 4. TTS 状态控制 (暂停/恢复监听)
+```
 
 ---
 
@@ -31,6 +72,15 @@ source install/setup.bash
 # Run Vosk-based speech-to-text node
 ros2 run my_voice_assistant vosk_stt_node
 
+# Run OpenAI-based speech-to-text node (requires OPENAI_API_KEY)
+# Use the convenience script that sets up the environment:
+./start_openai_stt.sh
+
+# Or run manually with proper environment setup:
+# source venv/bin/activate && source install/setup.bash && \
+# export PYTHONPATH=/workspaces/ros2_ws/venv/lib/python3.10/site-packages:$PYTHONPATH && \
+# ros2 run my_voice_assistant openai_stt_node
+
 # Run LLM-based dialogue processing node
 ros2 run my_voice_assistant llm_node
 
@@ -41,16 +91,30 @@ ros2 run my_voice_assistant realtime_llm_node
 ros2 run my_voice_assistant rl_stt_node
 
 # Run text-to-speech (TTS) node
-ros2 run my_voice_assistant tts_node
+./start_tts.sh
 
-#Run openai tts
-ros2 run my_voice_assistant openai_tts_node
+# Run OpenAI TTS node (requires OPENAI_API_KEY)
+./start_openai_tts.sh
 
 ```
 
 ---
 
-## 🔍 Check Installed Nodes
+## � Environment Variables
+
+For OpenAI-based nodes, you need to set the following environment variables:
+
+```bash
+# Required for openai_stt_node and openai_tts_node
+export OPENAI_API_KEY="your-openai-api-key"
+
+# Optional: specify the STT model (default: whisper-1)
+export OPENAI_STT_MODEL="whisper-1"  # or "gpt-4o-mini-transcribe"
+```
+
+---
+
+## �🔍 Check Installed Nodes
 
 ```bash
 ros2 pkg executables my_voice_assistant
@@ -61,7 +125,7 @@ ros2 pkg executables my_voice_assistant
 ## 🧪 Test Voice Message Publishing
 
 ```bash
-ros2 topic pub --once /speech_text std_msgs/msg/String "data: 'Hello, who are you'"
+ros2 topic pub --once /speech_text std_msgs/msg/String "data: 'Hi,captain, who are you'"
 ros2 topic pub --once /speech_text std_msgs/msg/String "data: 'Hello'"
 ```
 
@@ -88,6 +152,14 @@ source ~/.bashrc
 
 ```bash
 apt update && apt install -y espeak
+```
+
+### ❗ Vosk model fails with "No line could be read from the file"
+
+If you see this error and `word_feats.txt` is empty, remove `rnnlm/final.raw` or the entire `rnnlm/` folder to disable RNNLM support:
+
+```bash
+rm -rf src/my_voice_assistant/models/vosk-model-en-us-0.22/rnnlm
 ```
 
 ---

@@ -46,7 +46,7 @@ class LLMNode(Node):
                 {"role": "user", "content": prompt}
             ]
             response = self.client.chat.completions.create(
-                model="ft:gpt-4o-mini-2024-07-18:personal::BHYAggHd",
+                model="ft:gpt-4.1-mini-2025-04-14:personal:new-rev-assistant:BxqKCAoR",
                 messages=messages,
                 temperature=0.7,
                 max_tokens=1024,
