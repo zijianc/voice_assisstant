@@ -18,10 +18,30 @@ export PYTHONPATH=/workspaces/ros2_ws/venv/lib/python3.10/site-packages:$PYTHONP
 
 # 加载 .env 文件中的环境变量
 if [ -f .env ]; then
-    export $(cat .env | xargs)
+    set -a
+    source .env
+    set +a
     echo "✅ 已加载 .env 文件"
 else
     echo "⚠️  .env 文件未找到"
+fi
+
+# 加载TTS性能配置
+if [ -f tts_config.env ]; then
+    set -a
+    source tts_config.env
+    set +a
+    echo "🚀 已加载 TTS 性能配置"
+    echo "   模型: ${TTS_MODEL:-gpt-4o-mini-tts}"
+    echo "   语音: ${TTS_VOICE:-coral}"
+    echo "   格式: ${TTS_FORMAT:-wav}"
+    echo "   速度: ${TTS_SPEED:-1.1}"
+else
+    echo "💡 未找到 TTS 配置文件，使用默认优化设置"
+    export TTS_MODEL=gpt-4o-mini-tts
+    export TTS_VOICE=coral
+    export TTS_FORMAT=wav
+    export TTS_SPEED=1.1
 fi
 
 # 检查 API key

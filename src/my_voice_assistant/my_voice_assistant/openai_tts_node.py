@@ -10,6 +10,9 @@ import queue
 import threading
 import subprocess
 import time
+import asyncio
+import io
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
@@ -40,8 +43,19 @@ class OpenAITTSNode(Node):
         if not self.api_key:
             self.get_logger().error("请设置环境变量 OPENAI_API_KEY！")
         else:
-            openai.api_key = self.api_key
+            self.client = openai.OpenAI(api_key=self.api_key)
             self.get_logger().info("OpenAI TTS 客户端已初始化。")
+            
+        # 创建线程池用于异步TTS调用
+        self.thread_executor = ThreadPoolExecutor(max_workers=2)
+        
+        # TTS配置 - 使用最新模型和最快格式
+        self.tts_model = os.environ.get("TTS_MODEL", "gpt-4o-mini-tts")  # 使用最新模型
+        self.tts_voice = os.environ.get("TTS_VOICE", "coral")  # 推荐的新语音
+        self.tts_format = os.environ.get("TTS_FORMAT", "wav")  # 使用WAV格式获得最低延迟
+        self.tts_speed = float(os.environ.get("TTS_SPEED", "1.1"))  # 稍微加快语速
+        
+        self.get_logger().info(f"TTS 配置: 模型={self.tts_model}, 语音={self.tts_voice}, 格式={self.tts_format}, 速度={self.tts_speed}")
 
     def listener_callback(self, msg: String):
         text = msg.data.strip()
@@ -53,17 +67,17 @@ class OpenAITTSNode(Node):
             words = self.buffer.strip().split()
             buffer_snapshot = self.buffer.strip()
 
-        # 若句尾是句号、感叹号或问号，或长句（30词），且0.5秒内无新词
-        if text.endswith(('.', '!', '?')) or len(words) >= 25:
+        # 更激进的刷新策略 - 更快的响应
+        if text.endswith(('.', '!', '?')) or len(words) >= 15:  # 降低词数阈值
             self.get_logger().info(f"满足刷新条件，当前词数: {len(words)}, 当前缓冲内容: {buffer_snapshot}")
             if self.flush_timer:
                 self.flush_timer.cancel()
-            self.flush_timer = threading.Timer(0.5, self.flush_buffer)  # 等待 0.5 秒无新词再刷新
+            self.flush_timer = threading.Timer(0.2, self.flush_buffer)  # 减少等待时间到0.2秒
             self.flush_timer.start()
         else:
             if self.flush_timer:
                 self.flush_timer.cancel()
-            self.flush_timer = threading.Timer(0.5, self.flush_buffer)
+            self.flush_timer = threading.Timer(0.3, self.flush_buffer)  # 一般情况也减少等待时间
             self.flush_timer.start()
 
     def flush_buffer(self):
@@ -73,18 +87,29 @@ class OpenAITTSNode(Node):
         if not text:
             return
         self.get_logger().info("触发缓冲语音生成: " + text)
-        self.call_openai_tts(text)
-        time.sleep(0.3)
+        
+        # 异步调用TTS以避免阻塞
+        self.thread_executor.submit(self.call_openai_tts_async, text)
 
-    def call_openai_tts(self, text: str):
+    def call_openai_tts_async(self, text: str):
+        """异步TTS调用，避免阻塞主线程"""
         try:
-            # 使用 OpenAI 新接口进行 TTS
-            response = openai.audio.speech.create(
-                model="tts-1",  # 或使用 "tts-1-hd"
-                voice="nova",  # 可选：alloy, echo, fable, nova, onyx, shimmer
+            start_time = time.time()
+            self.get_logger().info(f"[TTS] 开始生成语音: {text[:50]}...")
+            
+            # 使用最新的模型和格式以获得最佳性能
+            response = self.client.audio.speech.create(
+                model=self.tts_model,  # 使用最新的 gpt-4o-mini-tts
+                voice=self.tts_voice,  # 使用推荐的 coral 语音
                 input=text,
-                speed=0.9 # 可选：0.5-2.0
+                response_format=self.tts_format,  # 使用 wav 格式获得最低延迟
+                speed=self.tts_speed,  # 稍微加快语速
+                # 添加指令来优化语音质量
+                instructions="Speak clearly and naturally with good pacing for a voice assistant."
             )
+            
+            generation_time = time.time() - start_time
+            self.get_logger().info(f"[TTS] 语音生成完成，耗时: {generation_time:.2f}秒")
 
             # 检查是否启用文件保存模式
             save_mode = os.environ.get("TTS_SAVE_MODE", "false").lower() == "true"
@@ -92,30 +117,34 @@ class OpenAITTSNode(Node):
             if save_mode:
                 # 保存到持久目录
                 import datetime
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]  # 包含微秒
                 save_dir = "/workspaces/ros2_ws/audio_output"
                 os.makedirs(save_dir, exist_ok=True)
                 
-                audio_file = os.path.join(save_dir, f"tts_{timestamp}.mp3")
+                file_ext = "wav" if self.tts_format == "wav" else "mp3"
+                audio_file = os.path.join(save_dir, f"tts_{timestamp}.{file_ext}")
                 with open(audio_file, "wb") as f:
                     f.write(response.content)
                 
                 self.get_logger().info(f"🎵 音频文件已保存: {audio_file}")
-                self.get_logger().info("💡 在宿主机上播放此文件来听取音频")
-                
-                # 仍然尝试播放
                 self.play_queue.put(audio_file)
             else:
-                # 原有的临时文件模式
-                temp_file = tempfile.mktemp(suffix=".mp3")
+                # 临时文件模式
+                file_ext = "wav" if self.tts_format == "wav" else "mp3"
+                temp_file = tempfile.mktemp(suffix=f".{file_ext}")
                 with open(temp_file, "wb") as f:
                     f.write(response.content)
 
-                self.get_logger().info(f"已生成音频文件: {temp_file}")
+                self.get_logger().info(f"[TTS] 已生成音频文件: {temp_file}")
                 self.play_queue.put(temp_file)
                 
         except Exception as e:
-            self.get_logger().error("调用 OpenAI TTS API 出错: " + str(e))
+            self.get_logger().error(f"[TTS] 调用 OpenAI TTS API 出错: {str(e)}")
+
+    # 保留旧方法以兼容性
+    def call_openai_tts(self, text: str):
+        """同步TTS调用（已弃用，保留兼容性）"""
+        self.call_openai_tts_async(text)
 
     # def play_worker(self):
     #     while rclpy.ok():
@@ -139,16 +168,19 @@ class OpenAITTSNode(Node):
         while rclpy.ok():
             try:
                 temp_file = self.play_queue.get(timeout=1)
+                start_time = time.time()
                 self.get_logger().info(f"[PLAY] 准备播放语音片段: {temp_file}")
                 
-                # 只使用一个播放器，避免重复播放
+                # 优先使用pygame，因为它对WAV格式支持更好
                 played = False
                 
-                # 首先尝试使用 pygame
                 try:
                     import pygame
-                    # 确保mixer完全初始化
-                    pygame.mixer.pre_init(frequency=22050, size=-16, channels=2, buffer=512)
+                    # 针对WAV格式优化pygame设置
+                    if self.tts_format == "wav":
+                        pygame.mixer.pre_init(frequency=24000, size=-16, channels=1, buffer=512)
+                    else:
+                        pygame.mixer.pre_init(frequency=22050, size=-16, channels=2, buffer=512)
                     pygame.mixer.init()
                     
                     self.get_logger().info(f"[PLAY] 使用 pygame 播放: {temp_file}")
@@ -157,13 +189,14 @@ class OpenAITTSNode(Node):
                     
                     # 等待播放完成
                     while pygame.mixer.music.get_busy():
-                        pygame.time.wait(100)
+                        pygame.time.wait(50)  # 减少等待间隔
                     
                     # 完全停止并清理
                     pygame.mixer.music.stop()
                     pygame.mixer.quit()
                     
-                    self.get_logger().info(f"[PLAY] pygame 播放完成: {temp_file}")
+                    play_time = time.time() - start_time
+                    self.get_logger().info(f"[PLAY] pygame 播放完成: {temp_file} (耗时: {play_time:.2f}秒)")
                     played = True
                     
                 except ImportError:
@@ -171,13 +204,14 @@ class OpenAITTSNode(Node):
                 except Exception as e:
                     self.get_logger().warn(f"[PLAY] pygame 播放失败: {str(e)}")
                 
-                # 只有在 pygame 完全失败时才尝试备选方案
+                # 备选播放方案
                 if not played:
                     try:
                         import playsound
                         self.get_logger().info(f"[PLAY] 使用 playsound 播放: {temp_file}")
                         playsound.playsound(temp_file)
-                        self.get_logger().info(f"[PLAY] playsound 播放完成: {temp_file}")
+                        play_time = time.time() - start_time
+                        self.get_logger().info(f"[PLAY] playsound 播放完成: {temp_file} (耗时: {play_time:.2f}秒)")
                         played = True
                     except ImportError:
                         self.get_logger().debug("[PLAY] playsound 不可用")
@@ -185,7 +219,6 @@ class OpenAITTSNode(Node):
                         self.get_logger().debug(f"[PLAY] playsound 播放失败: {str(e)}")
                 
                 if not played:
-                    # 如果没有可用的播放器，只记录文件生成成功
                     self.get_logger().info(f"[PLAY] 音频文件已生成但无可用播放器: {temp_file}")
                     self.get_logger().info("[PLAY] 请安装音频播放器或在有音频输出的环境中运行")
                     
@@ -208,7 +241,6 @@ class OpenAITTSNode(Node):
                 except Exception as e:
                     self.get_logger().warn(f"[CLEANUP] 清理临时文件失败: {str(e)}")
 
-    
 def main(args=None):
     rclpy.init(args=args)
     node = OpenAITTSNode()
@@ -216,8 +248,12 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
-    node.destroy_node()
-    rclpy.shutdown()
+    finally:
+        # 清理线程池
+        if hasattr(node, 'executor'):
+            node.executor.shutdown(wait=True)
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

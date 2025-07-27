@@ -25,11 +25,11 @@ SAMPLE_RATE = 24000          # Whisper 默认 24 kHz
 CHUNK_SIZE = 1024           # 音频块大小
 MODEL_NAME = os.getenv("OPENAI_STT_MODEL", "whisper-1")
 
-# VAD 配置
-VAD_THRESHOLD = 0.02        # 音频活动阈值
+# VAD 配置 - 调整这些参数来改善唤醒词检测
+VAD_THRESHOLD = 0.015       # 降低阈值，使VAD更敏感
 SILENCE_DURATION = 2.0      # 静音持续时间 (秒)
-MIN_SPEECH_DURATION = 0.5   # 最小语音持续时间 (秒)
-BUFFER_HISTORY = 0.5        # 语音前缓冲时间 (秒)
+MIN_SPEECH_DURATION = 0.2   # 降低最小语音持续时间，更快响应
+BUFFER_HISTORY = 1.5        # 增加前缓冲区时间，确保捕获完整唤醒词
 # -----------------------------------------------------------------------------
 
 class OpenAISTTNodeWithVAD(Node):
@@ -49,6 +49,18 @@ class OpenAISTTNodeWithVAD(Node):
         self.tts_status_sub = self.create_subscription(Bool, 'tts_status', self.tts_status_callback, 10)
         self.listening = True
 
+        # 允许用户调整VAD参数
+        self.declare_parameter('vad_threshold', VAD_THRESHOLD)
+        self.declare_parameter('silence_duration', SILENCE_DURATION)
+        self.declare_parameter('min_speech_duration', MIN_SPEECH_DURATION)
+        self.declare_parameter('buffer_history', BUFFER_HISTORY)
+        
+        # 获取参数
+        self.vad_threshold = self.get_parameter('vad_threshold').value
+        self.silence_duration = self.get_parameter('silence_duration').value
+        self.min_speech_duration = self.get_parameter('min_speech_duration').value
+        self.buffer_history = self.get_parameter('buffer_history').value
+
         # 初始化音频输入
         self.audio = pyaudio.PyAudio()
         self.stream = self.audio.open(
@@ -66,17 +78,22 @@ class OpenAISTTNodeWithVAD(Node):
 
         # VAD 相关变量
         self.vad_state = "silence"  # "silence", "speech", "processing"
-        self.speech_buffer = collections.deque(maxlen=int(SAMPLE_RATE * BUFFER_HISTORY / CHUNK_SIZE))
+        self.speech_buffer = collections.deque(maxlen=int(SAMPLE_RATE * self.buffer_history / CHUNK_SIZE))
         self.current_speech = bytearray()
         self.silence_counter = 0
         self.speech_counter = 0
         self.last_speech_time = 0
+        
+        # 能量历史，用于动态阈值调整
+        self.energy_history = collections.deque(maxlen=50)  # 存储最近50个能量值
+        self.background_energy = 0.01  # 初始背景能量估计值
 
         # 创建音频处理线程
         self.audio_thread = threading.Thread(target=self.audio_processing_thread, daemon=True)
         self.audio_thread.start()
 
-        self.get_logger().info(f"VAD 配置: 阈值={VAD_THRESHOLD}, 静音检测={SILENCE_DURATION}s")
+        self.get_logger().info(f"VAD 配置: 阈值={self.vad_threshold}, 静音检测={self.silence_duration}s, " +
+                               f"前缓冲区={self.buffer_history}s, 最小语音={self.min_speech_duration}s")
 
     def calculate_rms(self, audio_data):
         """计算音频RMS (均方根) 用于VAD"""
@@ -87,8 +104,18 @@ class OpenAISTTNodeWithVAD(Node):
         # 归一化到0-1范围
         return rms / 32768.0
 
+    def update_background_energy(self, rms):
+        """更新背景噪音能量估计"""
+        self.energy_history.append(rms)
+        # 使用较低百分位数估计背景噪音
+        if len(self.energy_history) > 10:
+            self.background_energy = np.percentile(list(self.energy_history), 10)
+        return max(self.background_energy * 2.5, self.vad_threshold)
+
     def audio_processing_thread(self):
         """音频处理线程，包含VAD逻辑"""
+        continuous_listening = True  # 连续监听模式，即使没检测到唤醒词也继续监听
+        
         while rclpy.ok():
             if not self.listening:
                 time.sleep(0.1)
@@ -102,14 +129,22 @@ class OpenAISTTNodeWithVAD(Node):
                 # 计算音频能量
                 rms = self.calculate_rms(audio_data)
                 
+                # 更新动态阈值 (根据背景噪音自适应)
+                dynamic_threshold = self.update_background_energy(rms)
+                
                 # VAD 状态机
                 if self.vad_state == "silence":
                     # 始终保持历史缓冲区
                     self.speech_buffer.append(audio_data)
                     
-                    if rms > VAD_THRESHOLD:
+                    # 检测声音活动
+                    if rms > dynamic_threshold:
                         self.speech_counter += 1
-                        if self.speech_counter >= int(MIN_SPEECH_DURATION * SAMPLE_RATE / CHUNK_SIZE):
+                        # 记录RMS用于调试
+                        if self.speech_counter == 1:
+                            self.get_logger().debug(f"检测到潜在语音开始 (RMS: {rms:.4f}, 阈值: {dynamic_threshold:.4f})")
+                            
+                        if self.speech_counter >= int(self.min_speech_duration * SAMPLE_RATE / CHUNK_SIZE):
                             # 检测到语音开始
                             self.vad_state = "speech"
                             self.speech_counter = 0
@@ -121,7 +156,7 @@ class OpenAISTTNodeWithVAD(Node):
                             for buffered_chunk in self.speech_buffer:
                                 self.current_speech.extend(buffered_chunk)
                             
-                            self.get_logger().info(f"🎤 检测到语音开始 (RMS: {rms:.4f})")
+                            self.get_logger().info(f"🎤 检测到语音开始 (RMS: {rms:.4f}, 阈值: {dynamic_threshold:.4f})")
                     else:
                         self.speech_counter = 0
                 
@@ -129,18 +164,25 @@ class OpenAISTTNodeWithVAD(Node):
                     # 添加音频到当前语音缓冲区
                     self.current_speech.extend(audio_data)
                     
-                    if rms <= VAD_THRESHOLD:
+                    if rms <= dynamic_threshold * 0.8:  # 静音阈值略低于动态阈值
                         self.silence_counter += 1
                         silence_duration = self.silence_counter * CHUNK_SIZE / SAMPLE_RATE
                         
-                        if silence_duration >= SILENCE_DURATION:
+                        if silence_duration >= self.silence_duration:
                             # 检测到语音结束
                             self.vad_state = "processing"
                             speech_duration = len(self.current_speech) / (SAMPLE_RATE * 2)  # 2 bytes per sample
                             self.get_logger().info(f"🔇 检测到语音结束 (时长: {speech_duration:.2f}s)")
                             
                             # 处理语音
-                            self.process_speech_chunk(self.current_speech)
+                            if speech_duration > 0.5:  # 确保语音片段足够长
+                                # 在单独线程中处理语音，避免阻塞主VAD循环
+                                processing_thread = threading.Thread(
+                                    target=self.process_speech_chunk,
+                                    args=(bytes(self.current_speech),),
+                                    daemon=True
+                                )
+                                processing_thread.start()
                             
                             # 重置状态
                             self.current_speech = bytearray()
@@ -153,7 +195,14 @@ class OpenAISTTNodeWithVAD(Node):
                 # 超时保护：如果语音持续太久，强制处理
                 if self.vad_state == "speech" and (current_time - self.last_speech_time) > 10.0:
                     self.get_logger().info("⏰ 语音超时，强制处理")
-                    self.process_speech_chunk(self.current_speech)
+                    speech_data = bytes(self.current_speech)
+                    processing_thread = threading.Thread(
+                        target=self.process_speech_chunk, 
+                        args=(speech_data,),
+                        daemon=True
+                    )
+                    processing_thread.start()
+                    
                     self.current_speech = bytearray()
                     self.vad_state = "silence"
 
@@ -195,7 +244,8 @@ class OpenAISTTNodeWithVAD(Node):
                     model=MODEL_NAME,
                     file=f,
                     language="en",
-                    prompt="The captain is the wakeword.",
+                    # 提示词中强调唤醒词可能在句首
+                    prompt="The captain is the wake word. Expect phrases starting with Hi Captain, Hey Captain, or Hello Captain.",
                     temperature=0,
                     response_format="text"
                 )
@@ -215,23 +265,41 @@ class OpenAISTTNodeWithVAD(Node):
 
     def process_recognized_text(self, text):
         """处理识别的文本，检查唤醒词"""
+        if not text:
+            return
+            
         lower_text = text.lower()
         match_found = False
+        matching_word = None
         
+        # 更严格的唤醒词检查
         for word in self.wake_words:
             if word in lower_text:
                 match_found = True
+                matching_word = word
                 break
+                
+            # 模糊匹配，尤其针对句子开头
+            # 如果句子以唤醒词的部分开头，增加匹配可能性
+            if lower_text.startswith(word[:5]):  # 检查是否以唤醒词前5个字符开头
+                ratio = difflib.SequenceMatcher(None, lower_text[:len(word)], word).ratio()
+                if ratio > 0.7:  # 对句首更宽松的阈值
+                    match_found = True
+                    matching_word = word
+                    break
+                    
+            # 一般模糊匹配
             ratio = difflib.SequenceMatcher(None, lower_text, word).ratio()
             if ratio > 0.75:
                 match_found = True
+                matching_word = word
                 break
                 
         if match_found:
             msg = String()
             msg.data = text
             self.publisher_.publish(msg)
-            self.get_logger().info(f"🔥 识别结果 (唤醒词激活): {text}")
+            self.get_logger().info(f"🔥 识别结果 (唤醒词激活 '{matching_word}'): {text}")
         else:
             self.get_logger().info(f"未检测到唤醒词: {text}")
 
@@ -251,8 +319,10 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
-    node.destroy_node()
-    rclpy.shutdown()
+    finally:
+        if node:
+            node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

@@ -24,12 +24,10 @@ setup(
             'vosk_stt_node = my_voice_assistant.vosk_stt_node:main',
             'llm_node = my_voice_assistant.llm_node:main',
             'tts_node = my_voice_assistant.tts_node:main',
-            'realtime_llm_node = my_voice_assistant.realtime_llm_node:main',
-            'test_realtime_llm = my_voice_assistant.test_realtime_llm:main',
             'rl_stt_node = my_voice_assistant.realtime_stt:main',
             'openai_tts_node = my_voice_assistant.openai_tts_node:main',
             'openai_stt_node = my_voice_assistant.openai_stt_node:main',
-            'realtime_transcription_node = my_voice_assistant.realtime_stt_node:main',
+            'openai_stt_node_with_vad = my_voice_assistant.realtime_stt_node:main',
         ],
     },
 )
