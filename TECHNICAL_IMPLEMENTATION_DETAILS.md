@@ -121,9 +121,103 @@ def process_audio_stream(self):
             self.get_logger().error(f"音频处理错误: {e}")
 ```
 
-### 3. LLM内容过滤 (`llm_node.py`)
+### 3. LLM智能对话系统 (`llm_node.py`)
 
-#### 过滤器详细实现
+#### 🧠 对话上下文管理
+```python
+class LLMNode(Node):
+    def __init__(self):
+        # 初始化对话历史存储
+        self.conversation_history: list[dict[str, str]] = []  # 存储用户和助手的对话
+        self.max_history_messages = 20   # 保持最近20条消息 (10轮对话)
+        
+        # 初始化RAG知识库
+        try:
+            self.knowledge_base = UWAKnowledgeBase()
+            self.get_logger().info("✅ RAG Knowledge Base initialized successfully")
+        except Exception as e:
+            self.get_logger().error(f"❌ Failed to initialize Knowledge Base: {e}")
+            self.knowledge_base = None
+
+    def call_chatgpt_with_rag(self, prompt: str) -> str:
+        """增强版ChatGPT调用，集成RAG和对话历史"""
+        
+        # 步骤1: 搜索相关知识
+        search_results = self.search_knowledge_base(prompt, n_results=3)
+        rag_context = self.format_rag_context(search_results)
+        
+        # 步骤2: 构建包含历史的消息列表
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # 添加最近的对话历史 (控制token使用)
+        if self.conversation_history:
+            messages.extend(self.conversation_history[-self.max_history_messages:])
+        
+        # 添加当前用户消息
+        messages.append({"role": "user", "content": prompt})
+        
+        # 步骤3: 调用OpenAI API
+        response = self.client.chat.completions.create(
+            model="ft:gpt-4.1-mini-2025-04-14:personal:my-voice-assistant:BxxCKJUa",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=1024,
+            stream=True
+        )
+        
+        # 步骤4: 更新对话历史
+        self.conversation_history.append({"role": "user", "content": prompt})
+        self.conversation_history.append({"role": "assistant", "content": final_filtered})
+        
+        # 步骤5: 维护历史长度
+        if len(self.conversation_history) > self.max_history_messages:
+            excess = len(self.conversation_history) - self.max_history_messages
+            self.conversation_history = self.conversation_history[excess:]
+```
+
+#### 🔍 RAG知识检索系统
+```python
+def search_knowledge_base(self, query: str, n_results: int = 3):
+    """搜索UWA知识库获取相关信息"""
+    if not self.knowledge_base:
+        return []
+        
+    try:
+        results = self.knowledge_base.search(query, n_results=n_results)
+        
+        if results:
+            self.get_logger().info(f"🔍 Found {len(results)} relevant knowledge entries")
+            for i, result in enumerate(results):
+                self.get_logger().debug(f"  {i+1}. [{result['metadata']['category']}] "
+                                      f"{result['content'][:50]}... (distance: {result['distance']:.3f})")
+        return results
+        
+    except Exception as e:
+        self.get_logger().error(f"❌ Knowledge search error: {e}")
+        return []
+
+def format_rag_context(self, search_results: list) -> str:
+    """将搜索结果格式化为LLM上下文"""
+    if not search_results:
+        return ""
+        
+    context_parts = ["📚 RELEVANT UWA INFORMATION:"]
+    
+    for i, result in enumerate(search_results, 1):
+        building = result['metadata'].get('building', 'Unknown')
+        category = result['metadata'].get('category', 'general')
+        content = result['content']
+        
+        context_parts.append(f"{i}. [{category.upper()}] {content}")
+        if building != 'Campus General' and building != 'unknown':
+            context_parts[-1] += f" (Located: {building})"
+    
+    context_parts.append("\nPlease use this information to provide accurate, helpful responses about UWA.")
+    
+    return "\n".join(context_parts)
+```
+
+#### 🧹 内容过滤器详细实现
 ```python
 def filter_content(self, text: str) -> str:
     """多层次内容过滤器"""
@@ -158,33 +252,93 @@ def filter_content(self, text: str) -> str:
     
     # 记录过滤效果
     if len(filtered_text) != original_length:
-        self.get_logger().info(f"内容过滤: {original_length}字符 -> {len(filtered_text)}字符")
+        self.get_logger().info(f"🧹 Content filtered: {original_length} -> {len(filtered_text)} chars")
     
     return filtered_text
 ```
 
-#### 集成到LLM响应流
+#### 🎯 智能功能特点总结
+
+**对话上下文管理**:
+- ✅ 自动维护最近20条消息历史
+- ✅ 智能token管理，避免超出API限制
+- ✅ 对话历史自动截断和更新
+- ✅ 支持多轮连续对话，保持上下文连贯性
+
+**RAG知识增强**:
+- ✅ 集成UWA校园知识库（44+文档）
+- ✅ 实时知识检索，相关度评分排序
+- ✅ 动态上下文注入，提升回答准确性  
+- ✅ 支持建筑物位置、服务时间等具体信息查询
+
+**内容质量保证**:
+- ✅ 多层过滤算法，自动清理LLM输出噪声
+- ✅ 实时内容过滤，保证用户体验
+- ✅ 过滤效果跟踪和日志记录
+- ✅ 流式响应处理，降低延迟感知
+
+#### 🎥 用户交互增强
 ```python
-def llm_response_callback(self, msg):
-    """处理LLM响应并应用过滤"""
-    raw_response = msg.data
-    
-    # 应用内容过滤
-    filtered_response = self.filter_content(raw_response)
-    
-    # 验证过滤结果
-    if not filtered_response.strip():
-        self.get_logger().warn("过滤后内容为空，跳过发布")
+def listener_callback(self, msg: String):
+    """增强版用户输入处理"""
+    input_text = msg.data.strip()
+    if not input_text:
         return
+
+    # 清晰显示用户输入
+    print("\n" + "="*60)
+    print("🎤 用户语音输入:")
+    print("-"*60)
+    print(f"'{input_text}'")
+    print("="*60)
+    
+    # 显示RAG搜索结果
+    search_results = self.search_knowledge_base(input_text, n_results=3)
+    if search_results:
+        print("\n" + "="*60)
+        print("🔍 RAG 知识库搜索结果:")
+        print("-"*60)
+        for i, result in enumerate(search_results, 1):
+            category = result['metadata']['category']
+            building = result['metadata']['building']
+            content = result['content'][:80] + "..." if len(result['content']) > 80 else result['content']
+            distance = result['distance']
+            
+            print(f"{i}. [{category}] {content}")
+            if building not in ['Campus General', 'unknown']:
+                print(f"   📍 位置: {building}")
+            print(f"   📊 相关度: {(1-distance)*100:.1f}%")
+        print("="*60)
+    
+    # 显示完整LLM回答
+    print("\n" + "="*60)
+    print("🤖 LLM 完整回答:")
+    print("-"*60)
+    print(final_filtered)
+    print("="*60 + "\n")
+```
+
+### 4. 实时语音识别+VAD (`realtime_stt_node.py`)
+
+#### VAD语音活动检测
+```python
+def process_audio_chunk(self, audio_data):
+    """处理音频块并检测语音活动"""
+    # 计算RMS音量
+    rms = np.sqrt(np.mean(audio_data**2))
+    
+    # 动态阈值检测
+    if rms > self.vad_threshold:
+        self.is_speaking = True
+        self.speech_buffer.extend(audio_data)
+        self.silence_counter = 0
+    else:
+        self.silence_counter += 1
         
-    if len(filtered_response) < len(raw_response) * 0.3:
-        self.get_logger().warn("过滤掉过多内容，请检查过滤规则")
-    
-    # 发布清洁内容
-    clean_msg = String(data=filtered_response)
-    self.response_publisher.publish(clean_msg)
-    
-    self.get_logger().info(f"发布过滤后响应: {filtered_response[:50]}...")
+        # 语音结束检测
+        if self.is_speaking and self.silence_counter > self.silence_limit:
+            self.process_speech_segment()
+            self.is_speaking = False
 ```
 
 ## 🧪 测试验证方法

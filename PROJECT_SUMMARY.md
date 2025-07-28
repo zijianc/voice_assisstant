@@ -21,13 +21,16 @@
 | **内容纯净度** | 有噪声 | 100%过滤 | **完全解决** |
 | **音频稳定性** | 重复播放 | 单次播放 | **问题修复** |
 | **语音检测** | 被动识别 | 智能VAD | **新功能** |
+| **🆕 对话连贯性** | 单轮问答 | 多轮上下文 | **新功能** |
+| **🆕 知识准确性** | 通用回答 | RAG增强 | **新功能** |
+| **🆕 用户体验** | 简单输出 | 交互式显示 | **新功能** |
 
 ### 技术架构优化
 
 ```mermaid
 graph TB
     A[语音输入] --> B[STT节点+VAD]
-    B --> C[LLM节点+过滤]
+    B --> C[LLM节点+RAG+上下文]
     C --> D[TTS节点+优化]
     D --> E[音频输出]
     
@@ -38,6 +41,9 @@ graph TB
     G[性能监控] --> B
     G --> C
     G --> D
+    
+    H[UWA知识库] --> C
+    I[对话历史] --> C
 ```
 
 ## 🔧 关键技术创新
@@ -54,7 +60,14 @@ graph TB
 - **缓冲管理**: 智能语音片段收集
 - **参数可调**: 支持不同使用场景
 
-### 3. LLM内容过滤系统
+### 3. LLM智能对话系统 (🆕 增强功能)
+- **对话上下文**: 自动维护最近20条消息历史，支持多轮连续对话
+- **RAG知识增强**: 集成UWA校园知识库(44+文档)，实时检索相关信息
+- **内容过滤**: 正则表达式 + 模式匹配，自动清理LLM输出噪声
+- **智能交互**: 清晰显示用户输入、RAG搜索结果和LLM完整回答
+- **流式处理**: 实时响应生成，降低用户等待时间
+
+### 4. LLM内容过滤系统
 - **多层过滤**: 正则表达式 + 模式匹配
 - **噪声移除**: 自动清理`【742442319583238†L62-L65】`类内容
 - **格式优化**: 空格整理 + 标点规范化
@@ -89,16 +102,18 @@ ros2_ws/
 ├── 📊 性能优化文档
 │   ├── PERFORMANCE_OPTIMIZATION_GUIDE.md    # 完整优化指南
 │   ├── TECHNICAL_IMPLEMENTATION_DETAILS.md  # 技术实现细节
-│   └── DEPLOYMENT_GUIDE.md                  # 部署使用指南
+│   ├── DEPLOYMENT_GUIDE.md                  # 部署使用指南
+│   └── UWA_RAG_USAGE_GUIDE.md               # RAG知识库使用指南
 │
 ├── 🧪 测试脚本
 │   ├── test_tts_performance.sh              # 性能基准测试
 │   ├── test_tts_simple.sh                   # 简单功能测试
-│   └── setup_env.sh                         # 环境配置向导
+│   ├── setup_env.sh                         # 环境配置向导
+│   └── test_rag_integration.py              # RAG系统集成测试
 │
 ├── 🚀 启动脚本
 │   ├── start_tts_fast.sh                    # 优化TTS节点
-│   ├── start_llm.sh                         # LLM节点
+│   ├── start_llm.sh                         # LLM节点(含RAG)
 │   └── start_realtime_stt.sh                # 实时STT节点
 │
 ├── ⚙️ 配置文件
@@ -109,7 +124,11 @@ ros2_ws/
     └── src/my_voice_assistant/my_voice_assistant/
         ├── openai_tts_node.py               # 优化后TTS节点
         ├── realtime_stt_node.py             # 新增VAD STT节点
-        ├── llm_node.py                      # 增强LLM节点
+        ├── llm_node.py                      # 增强LLM节点(RAG+上下文)
+        ├── uwa_knowledge_base.py            # RAG知识库核心类
+        ├── expand_knowledge_base.py         # 知识库扩展脚本
+        ├── manage_knowledge_base.py         # 🆕 知识库管理工具
+        ├── add_new_knowledge.py             # 🆕 新数据添加模板
         └── test/test_content_filter.py      # 内容过滤测试
 ```
 
