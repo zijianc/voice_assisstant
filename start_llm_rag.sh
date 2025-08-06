@@ -13,14 +13,27 @@ if [ ! -f "src/my_voice_assistant/setup.py" ]; then
     exit 1
 fi
 
+# Load environment variables from .env file
+if [ -f ".env" ]; then
+    echo "📄 Loading environment variables from .env..."
+    set -a  # automatically export all variables
+    source .env
+    set +a  # disable automatic export
+    echo "✅ Environment variables loaded"
+else
+    echo "⚠️  .env file not found, checking for environment variables..."
+fi
+
 # Check environment variables
 if [ -z "$OPENAI_API_KEY" ]; then
     echo "❌ Error: OPENAI_API_KEY environment variable is not set"
-    echo "   Please set your OpenAI API key:"
-    echo "   export OPENAI_API_KEY='your-api-key-here'"
+    echo "   Please either:"
+    echo "   1. Create a .env file with: OPENAI_API_KEY=your-api-key-here"
+    echo "   2. Export the variable: export OPENAI_API_KEY='your-api-key-here'"
     exit 1
 fi
 
+echo "✅ OPENAI_API_KEY is set"
 echo "✅ Environment check passed"
 
 # Source ROS2 environment

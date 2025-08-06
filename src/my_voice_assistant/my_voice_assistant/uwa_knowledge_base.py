@@ -13,6 +13,9 @@ from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Optional
 import logging
 
+# Disable ChromaDB telemetry to avoid posthog errors
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+
 
 class UWAKnowledgeBase:
     def __init__(self, db_path: str = "./uwa_knowledge_db"):
