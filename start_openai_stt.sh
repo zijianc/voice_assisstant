@@ -16,7 +16,8 @@ export PYTHONPATH=/workspaces/ros2_ws/venv/lib/python3.10/site-packages:$PYTHONP
 
 # 加载 .env 文件中的环境变量
 if [ -f .env ]; then
-    export $(cat .env | xargs)
+    # 过滤掉注释行和空行
+    export $(grep -v '^#' .env | grep -v '^$' | xargs)
     echo "✅ 已加载 .env 文件"
 else
     echo "⚠️  .env 文件未找到"
