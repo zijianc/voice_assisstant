@@ -19,9 +19,11 @@ load_dotenv()
 
 # -----------------------------------------------------------------------------
 # Audio configuration
-SAMPLE_RATE = 24000          # Whisper 默认 24 kHz 也 OK 16 kHz
-CHUNK_SECONDS = 5            # 每块时长
-MODEL_NAME = os.getenv("OPENAI_STT_MODEL", "whisper-1")  # 或 gpt-4o-mini-transcribe
+SAMPLE_RATE = 24000
+CHUNK_SECONDS = 5
+MODEL_NAME = os.getenv("OPENAI_STT_MODEL", "whisper-1")
+# 识别恢复尾音保护(秒)
+RESUME_HANGOVER_SEC = float(os.getenv("STT_RESUME_HANGOVER_SEC", "0.8"))
 # -----------------------------------------------------------------------------
 
 class OpenAISTTNode(Node):
@@ -39,7 +41,15 @@ class OpenAISTTNode(Node):
         self.publisher_ = self.create_publisher(String, 'speech_text', 10)
         # 订阅 TTS 状态消息（假设 TTS 节点发布 Bool 消息，True 表示正在播放）
         self.tts_status_sub = self.create_subscription(Bool, 'tts_status', self.tts_status_callback, 10)
-        self.listening = True  # 用于控制是否监听
+        # 新增：订阅 llm_response 以获取将被TTS播放的文本，做文本级自回放过滤
+        self.tts_text_sub = self.create_subscription(String, 'llm_response', self.llm_response_callback, 10)
+        self.listening = True
+        self.tts_playing = False
+        self.resume_at = 0.0
+        self._should_drain = False
+        # 记录最近TTS文本及过期时间
+        self._tts_recent_text = ""
+        self._tts_recent_expiry = 0.0
 
         # 初始化音频输入
         self.audio = pyaudio.PyAudio()
@@ -65,15 +75,46 @@ class OpenAISTTNode(Node):
         self.recognition_thread.start()
 
     def tts_status_callback(self, msg: Bool):
-        # 假设 TTS 节点发布 True 表示正在播放，False 表示播放完毕
+        # True: TTS正在播放，暂停识别；False: 播放结束，延迟恢复
         if msg.data:
-            self.get_logger().info("检测到 TTS 正在播放，暂停监听")
+            self.get_logger().info("检测到 TTS 正在播放，暂停监听 (ASR门控启用)")
+            self.tts_playing = True
             self.listening = False
+            self._should_drain = True   # 标记需要丢弃TTS期间采集的数据
         else:
-            self.get_logger().info("TTS 播放完毕，恢复监听")
-            self.listening = True
+            self.get_logger().info(f"TTS 播放完毕，延迟恢复监听 ({int(RESUME_HANGOVER_SEC*1000)}ms hangover)")
+            self.tts_playing = False
+            self.resume_at = time.time() + RESUME_HANGOVER_SEC  # 300ms hangover
+            self._should_drain = True   # 恢复前再清一次
+
+    def llm_response_callback(self, msg: String):
+        """记录最近要被TTS播放的文本，在TTS播放期间或刚结束时更新，用于自回放过滤"""
+        text = (msg.data or '').strip()
+        if not text:
+            return
+        # 仅在TTS播放中或刚结束的短时间内更新缓存
+        if self.tts_playing or (self.resume_at and time.time() < self.resume_at + 1.0):
+            # 限制缓存长度，避免过大
+            combined = (self._tts_recent_text + " " + text).strip()
+            self._tts_recent_text = combined[-1000:]
+            self._tts_recent_expiry = time.time() + 3.0  # 3秒内有效
 
     def process_recognized_text(self, text):
+        # 文本级自回放过滤：与最近TTS文本高度相似则丢弃
+        now = time.time()
+        recent_valid = (self._tts_recent_text and now < self._tts_recent_expiry)
+        if recent_valid:
+            t = text.lower().strip()
+            ref = self._tts_recent_text.lower().strip()
+            try:
+                # 直接包含或较高相似度则视为自回放
+                ratio = difflib.SequenceMatcher(None, t, ref).ratio()
+                if t in ref or ratio >= 0.6:
+                    self.get_logger().info("丢弃自回放文本(与TTS高度相似)")
+                    return
+            except Exception:
+                pass
+        # 唤醒词检测
         lower_text = text.lower()
         match_found = False
         for word in self.wake_words:
@@ -106,10 +147,24 @@ class OpenAISTTNode(Node):
         last_publish = time.time()
 
         while rclpy.ok():
-            # 检查暂停
-            if not self.listening:
-                time.sleep(0.1)
+            # 门控：TTS播放中暂停，一直到hangover结束
+            if self.tts_playing or (self.resume_at and time.time() < self.resume_at):
+                # 丢弃这一阶段采集的帧，避免回放内容在恢复后被转写
+                if self._should_drain:
+                    drained = 0
+                    try:
+                        while True:
+                            self.audio_queue.get_nowait()
+                            drained += 1
+                    except queue.Empty:
+                        pass
+                    pcm_buf.clear()
+                    self.get_logger().debug(f"已丢弃播放期间采集的帧: {drained}")
+                    self._should_drain = False
+                time.sleep(0.05)
                 continue
+            else:
+                self.listening = True
 
             # 从队列拿数据
             try:
@@ -153,7 +208,7 @@ class OpenAISTTNode(Node):
                     model=MODEL_NAME,
                     file=f,
                     language="en",
-                    prompt="The captain is the wakeword.",
+                    #prompt="The captain is the wakeword.",
                     temperature=0,
                     response_format="text"   # 纯文本
                 )

@@ -1,4 +1,5 @@
 import os
+import json
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool
@@ -14,7 +15,6 @@ import tenacity
 from dotenv import load_dotenv
 import numpy as np
 import collections
-from concurrent.futures import ThreadPoolExecutor
 
 # 加载 .env 文件
 load_dotenv()
@@ -48,16 +48,6 @@ class OpenAISTTNodeWithVAD(Node):
         # 订阅 TTS 状态消息
         self.tts_status_sub = self.create_subscription(Bool, 'tts_status', self.tts_status_callback, 10)
         self.listening = True
-        # TTS 打断相关
-        self.tts_active = False                       # 当前是否在播报
-        self.interrupt_pub = self.create_publisher(Bool, 'tts_interrupt', 10)
-
-        # 语言参数：空字符串表示自动检测
-        self.declare_parameter('language', '')
-        self.language = self.get_parameter('language').value
-
-        # 线程池：统一限流语音转写请求
-        self.transcribe_executor = ThreadPoolExecutor(max_workers=2)
 
         # 允许用户调整VAD参数
         self.declare_parameter('vad_threshold', VAD_THRESHOLD)
@@ -115,10 +105,11 @@ class OpenAISTTNodeWithVAD(Node):
         return rms / 32768.0
 
     def update_background_energy(self, rms):
-        """更新背景噪音能量估计（指数平滑）"""
-        # α = 0.95，平滑系数；可调
-        self.background_energy = 0.95 * self.background_energy + 0.05 * rms
-        # 声音活动阈值为背景能量的 2.5 倍或最小 vad_threshold
+        """更新背景噪音能量估计"""
+        self.energy_history.append(rms)
+        # 使用较低百分位数估计背景噪音
+        if len(self.energy_history) > 10:
+            self.background_energy = np.percentile(list(self.energy_history), 10)
         return max(self.background_energy * 2.5, self.vad_threshold)
 
     def audio_processing_thread(self):
@@ -133,31 +124,10 @@ class OpenAISTTNodeWithVAD(Node):
             try:
                 # 读取音频数据
                 audio_data = self.stream.read(CHUNK_SIZE, exception_on_overflow=False)
-                current_time = time.time()                
+                current_time = time.time()
+                
                 # 计算音频能量
                 rms = self.calculate_rms(audio_data)
-
-                # ---------- 打断检测 ----------
-                if self.tts_active:
-                    # 用同一函数估算动态阈值
-                    dynamic_threshold_tts = self.update_background_energy(rms)
-                    if rms > dynamic_threshold_tts:        # 有人插话
-                        self.speech_counter += 1
-                        need_frames = int(self.min_speech_duration * SAMPLE_RATE / CHUNK_SIZE)
-                        if self.speech_counter >= need_frames:
-                            # 触发打断
-                            interrupt_msg = Bool()
-                            interrupt_msg.data = True
-                            self.interrupt_pub.publish(interrupt_msg)
-                            self.get_logger().info("🛑 TTS 播放中检测到用户讲话，已发送打断信号")
-                            # 复位计数器，避免频繁
-                            self.speech_counter = 0
-                            self.silence_counter = 0
-                    else:
-                        self.speech_counter = 0
-
-                    # 打断模式下跳过后续 VAD & 识别逻辑
-                    continue
                 
                 # 更新动态阈值 (根据背景噪音自适应)
                 dynamic_threshold = self.update_background_energy(rms)
@@ -207,8 +177,12 @@ class OpenAISTTNodeWithVAD(Node):
                             # 处理语音
                             if speech_duration > 0.5:  # 确保语音片段足够长
                                 # 在单独线程中处理语音，避免阻塞主VAD循环
-                                self.transcribe_executor.submit(self.process_speech_chunk,
-                                                                bytes(self.current_speech))
+                                processing_thread = threading.Thread(
+                                    target=self.process_speech_chunk,
+                                    args=(bytes(self.current_speech),),
+                                    daemon=True
+                                )
+                                processing_thread.start()
                             
                             # 重置状态
                             self.current_speech = bytearray()
@@ -222,7 +196,12 @@ class OpenAISTTNodeWithVAD(Node):
                 if self.vad_state == "speech" and (current_time - self.last_speech_time) > 10.0:
                     self.get_logger().info("⏰ 语音超时，强制处理")
                     speech_data = bytes(self.current_speech)
-                    self.transcribe_executor.submit(self.process_speech_chunk, speech_data)
+                    processing_thread = threading.Thread(
+                        target=self.process_speech_chunk, 
+                        args=(speech_data,),
+                        daemon=True
+                    )
+                    processing_thread.start()
                     
                     self.current_speech = bytearray()
                     self.vad_state = "silence"
@@ -261,29 +240,28 @@ class OpenAISTTNodeWithVAD(Node):
         """Whisper 调用，带重试"""
         try:
             with open(fname, "rb") as f:
-                params = dict(
+                response = self.openai_client.audio.transcriptions.create(
                     model=MODEL_NAME,
                     file=f,
-                    prompt="The wake word is 'captain'.",
+                    language="en",
+                    # 提示词中强调唤醒词可能在句首
+                    prompt="The captain is the wake word. Expect phrases starting with Hi Captain, Hey Captain, or Hello Captain.",
                     temperature=0,
                     response_format="text"
                 )
-                if self.language:           # 非空则显式指定语言
-                    params['language'] = self.language
-                response = self.openai_client.audio.transcriptions.create(**params)
             return response.strip() if isinstance(response, str) else response.strip()
         except Exception as e:
             self.get_logger().error(f"OpenAI API 调用失败: {e}")
             return ""
 
     def tts_status_callback(self, msg: Bool):
-        """TTS 播放状态回调"""
-        # True = 播放中；False = 播放结束
-        self.tts_active = msg.data
-        if self.tts_active:
-            self.get_logger().info("检测到 TTS 正在播放，开启打断监听")
+        """TTS状态回调"""
+        if msg.data:
+            self.get_logger().info("检测到 TTS 正在播放，暂停监听")
+            self.listening = False
         else:
-            self.get_logger().info("TTS 播放结束，恢复正常识别")
+            self.get_logger().info("TTS 播放完毕，恢复监听")
+            self.listening = True
 
     def process_recognized_text(self, text):
         """处理识别的文本，检查唤醒词"""
