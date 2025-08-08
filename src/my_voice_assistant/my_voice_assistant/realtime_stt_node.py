@@ -15,6 +15,7 @@ import tenacity
 from dotenv import load_dotenv
 import numpy as np
 import collections
+import re
 
 # 加载 .env 文件
 load_dotenv()
@@ -30,6 +31,12 @@ VAD_THRESHOLD = 0.015       # 降低阈值，使VAD更敏感
 SILENCE_DURATION = 2.0      # 静音持续时间 (秒)
 MIN_SPEECH_DURATION = 0.2   # 降低最小语音持续时间，更快响应
 BUFFER_HISTORY = 1.5        # 增加前缓冲区时间，确保捕获完整唤醒词
+
+# 新增：门控/阈值/相似度/允许打断配置
+RESUME_HANGOVER_SEC = float(os.getenv("STT_RESUME_HANGOVER_SEC", "0.8"))
+TTS_VAD_THRESHOLD_BOOST = float(os.getenv("TTS_VAD_THRESHOLD_BOOST", "2.0"))
+SNR_GATE = float(os.getenv("STT_WAKEWORD_SNR_GATE", "1.8"))  # 片段RMS/背景能量 比值门限
+ALLOW_BARGE_IN = os.getenv("STT_ALLOW_BARGE_IN", "false").lower() == "true"
 # -----------------------------------------------------------------------------
 
 class OpenAISTTNodeWithVAD(Node):
@@ -47,7 +54,9 @@ class OpenAISTTNodeWithVAD(Node):
         self.publisher_ = self.create_publisher(String, 'speech_text', 10)
         # 订阅 TTS 状态消息
         self.tts_status_sub = self.create_subscription(Bool, 'tts_status', self.tts_status_callback, 10)
-        self.listening = True
+        # 新增：订阅 llm_response 做自回放文本过滤兜底
+        self.tts_text_sub = self.create_subscription(String, 'llm_response', self.llm_response_callback, 10)
+        self.listening = True  # 不再用它做门控，仅保持线程活跃
 
         # 允许用户调整VAD参数
         self.declare_parameter('vad_threshold', VAD_THRESHOLD)
@@ -73,8 +82,9 @@ class OpenAISTTNodeWithVAD(Node):
         self.stream.start_stream()
         self.get_logger().info("开始监听麦克风 (带VAD)...")
 
-        # 设置唤醒词
+        # 设置唤醒词与严格正则（仅句首、词边界）
         self.wake_words = ["hi captain", "hey captain", "hello captain"]
+        self.wake_regex = re.compile(r'^\s*(hi|hey|hello)\W+captain\b', re.I)
 
         # VAD 相关变量
         self.vad_state = "silence"  # "silence", "speech", "processing"
@@ -87,6 +97,16 @@ class OpenAISTTNodeWithVAD(Node):
         # 能量历史，用于动态阈值调整
         self.energy_history = collections.deque(maxlen=50)  # 存储最近50个能量值
         self.background_energy = 0.01  # 初始背景能量估计值
+        self.tts_threshold_boost = TTS_VAD_THRESHOLD_BOOST
+
+        # 新增：TTS门控状态
+        self.tts_playing = False
+        self.resume_at = 0.0
+        self._should_drain = False
+        self._freeze_noise = False
+        # 最近TTS文本缓存
+        self._tts_recent_text = ""
+        self._tts_recent_expiry = 0.0
 
         # 创建音频处理线程
         self.audio_thread = threading.Thread(target=self.audio_processing_thread, daemon=True)
@@ -99,37 +119,76 @@ class OpenAISTTNodeWithVAD(Node):
         """计算音频RMS (均方根) 用于VAD"""
         # 转换为numpy数组
         audio_np = np.frombuffer(audio_data, dtype=np.int16)
+        if audio_np.size == 0:
+            return 0.0
         # 计算RMS
         rms = np.sqrt(np.mean(audio_np.astype(np.float64) ** 2))
         # 归一化到0-1范围
         return rms / 32768.0
 
     def update_background_energy(self, rms):
-        """更新背景噪音能量估计"""
-        self.energy_history.append(rms)
-        # 使用较低百分位数估计背景噪音
-        if len(self.energy_history) > 10:
-            self.background_energy = np.percentile(list(self.energy_history), 10)
-        return max(self.background_energy * 2.5, self.vad_threshold)
+        """动态阈值：非冻结时更新背景噪声；TTS期提升阈值"""
+        if not self._freeze_noise:
+            self.energy_history.append(rms)
+            # 使用较低百分位数估计背景噪音
+            if len(self.energy_history) > 10:
+                self.background_energy = float(np.percentile(list(self.energy_history), 10))
+        base = max(self.background_energy * 2.5, self.vad_threshold)
+        if self.tts_playing:
+            base *= self.tts_threshold_boost  # TTS期间提升阈值
+        return base
 
     def audio_processing_thread(self):
         """音频处理线程，包含VAD逻辑"""
-        continuous_listening = True  # 连续监听模式，即使没检测到唤醒词也继续监听
+        continuous_listening = True  # 连续监听模式
         
         while rclpy.ok():
-            if not self.listening:
-                time.sleep(0.1)
+            # 读取音频数据（即便门控，也需要消耗流，便于 drain）
+            try:
+                audio_data = self.stream.read(CHUNK_SIZE, exception_on_overflow=False)
+            except Exception as e:
+                self.get_logger().error(f"音频读取错误: {e}")
+                time.sleep(0.05)
                 continue
 
+            current_time = time.time()
+
+            # 门控判定（TTS进行中或挂起期）
+            gated = self.tts_playing or (self.resume_at and current_time < self.resume_at)
+
+            # 首次进入门控/挂起后：清空缓冲，避免回放残留
+            if gated and self._should_drain:
+                try:
+                    self.speech_buffer.clear()
+                except Exception:
+                    pass
+                self.current_speech = bytearray()
+                self.silence_counter = 0
+                self.speech_counter = 0
+                self._should_drain = False
+                self.get_logger().debug("已清空缓冲与状态 (TTS期间/挂起)")
+
+            # 在门控并且不允许打断时：冻结噪声估计并直接丢弃本轮数据
+            if gated and not ALLOW_BARGE_IN:
+                self._freeze_noise = True
+                time.sleep(0.03)
+                # 循环继续读取以保持 drain
+                continue
+
+            # 若已脱离门控，解除冻结
+            if (not gated) and self._freeze_noise:
+                self._freeze_noise = False
+                self.resume_at = 0.0
+                self.get_logger().debug("恢复噪声估计")
+
             try:
-                # 读取音频数据
-                audio_data = self.stream.read(CHUNK_SIZE, exception_on_overflow=False)
-                current_time = time.time()
-                
                 # 计算音频能量
                 rms = self.calculate_rms(audio_data)
-                
-                # 更新动态阈值 (根据背景噪音自适应)
+                # 当前背景能量用于SNR判定
+                bg = max(self.background_energy, 1e-6)
+                snr_now = rms / bg
+
+                # 更新/获取动态阈值
                 dynamic_threshold = self.update_background_energy(rms)
                 
                 # VAD 状态机
@@ -137,13 +196,11 @@ class OpenAISTTNodeWithVAD(Node):
                     # 始终保持历史缓冲区
                     self.speech_buffer.append(audio_data)
                     
-                    # 检测声音活动
-                    if rms > dynamic_threshold:
+                    # 检测声音活动（TTS期额外要求SNR门限）
+                    if rms > dynamic_threshold and (not gated or snr_now >= SNR_GATE):
                         self.speech_counter += 1
-                        # 记录RMS用于调试
                         if self.speech_counter == 1:
-                            self.get_logger().debug(f"检测到潜在语音开始 (RMS: {rms:.4f}, 阈值: {dynamic_threshold:.4f})")
-                            
+                            self.get_logger().debug(f"检测到潜在语音开始 (RMS: {rms:.4f}, 阈值: {dynamic_threshold:.4f}, SNR: {snr_now:.2f})")
                         if self.speech_counter >= int(self.min_speech_duration * SAMPLE_RATE / CHUNK_SIZE):
                             # 检测到语音开始
                             self.vad_state = "speech"
@@ -156,7 +213,7 @@ class OpenAISTTNodeWithVAD(Node):
                             for buffered_chunk in self.speech_buffer:
                                 self.current_speech.extend(buffered_chunk)
                             
-                            self.get_logger().info(f"🎤 检测到语音开始 (RMS: {rms:.4f}, 阈值: {dynamic_threshold:.4f})")
+                            self.get_logger().info(f"🎤 检测到语音开始 (RMS: {rms:.4f}, 阈值: {dynamic_threshold:.4f}, SNR: {snr_now:.2f})")
                     else:
                         self.speech_counter = 0
                 
@@ -164,22 +221,21 @@ class OpenAISTTNodeWithVAD(Node):
                     # 添加音频到当前语音缓冲区
                     self.current_speech.extend(audio_data)
                     
-                    if rms <= dynamic_threshold * 0.8:  # 静音阈值略低于动态阈值
+                    if rms <= dynamic_threshold * 0.8:
                         self.silence_counter += 1
                         silence_duration = self.silence_counter * CHUNK_SIZE / SAMPLE_RATE
                         
                         if silence_duration >= self.silence_duration:
                             # 检测到语音结束
                             self.vad_state = "processing"
-                            speech_duration = len(self.current_speech) / (SAMPLE_RATE * 2)  # 2 bytes per sample
+                            speech_duration = len(self.current_speech) / (SAMPLE_RATE * 2)
                             self.get_logger().info(f"🔇 检测到语音结束 (时长: {speech_duration:.2f}s)")
                             
-                            # 处理语音
-                            if speech_duration > 0.5:  # 确保语音片段足够长
-                                # 在单独线程中处理语音，避免阻塞主VAD循环
+                            # 处理语音（过短忽略）
+                            if speech_duration > 0.5:
                                 processing_thread = threading.Thread(
                                     target=self.process_speech_chunk,
-                                    args=(bytes(self.current_speech),),
+                                    args=(bytes(self.current_speech), gated),
                                     daemon=True
                                 )
                                 processing_thread.start()
@@ -198,7 +254,7 @@ class OpenAISTTNodeWithVAD(Node):
                     speech_data = bytes(self.current_speech)
                     processing_thread = threading.Thread(
                         target=self.process_speech_chunk, 
-                        args=(speech_data,),
+                        args=(speech_data, gated),
                         daemon=True
                     )
                     processing_thread.start()
@@ -210,11 +266,25 @@ class OpenAISTTNodeWithVAD(Node):
                 self.get_logger().error(f"音频处理错误: {e}")
                 time.sleep(0.05)
 
-    def process_speech_chunk(self, speech_data):
+    def process_speech_chunk(self, speech_data, gated=False):
         """处理检测到的语音片段"""
+        # TTS期间且不允许打断：直接忽略
+        if gated and not ALLOW_BARGE_IN:
+            self.get_logger().debug("TTS期/挂起，不处理语音片段")
+            return
+
         if len(speech_data) < SAMPLE_RATE * 2 * 0.3:  # 小于0.3秒的语音忽略
             self.get_logger().debug("语音片段太短，忽略")
             return
+
+        # 计算片段SNR
+        try:
+            seg_np = np.frombuffer(speech_data, dtype=np.int16)
+            seg_rms = 0.0 if seg_np.size == 0 else (np.sqrt(np.mean(seg_np.astype(np.float64) ** 2)) / 32768.0)
+            bg = max(self.background_energy, 1e-6)
+            snr_ratio = seg_rms / bg
+        except Exception:
+            snr_ratio = None
 
         try:
             # 创建临时WAV文件
@@ -222,7 +292,7 @@ class OpenAISTTNodeWithVAD(Node):
                 self.write_wav(tmp.name, speech_data)
                 transcript = self.transcribe_file(tmp.name)
                 if transcript:
-                    self.process_recognized_text(transcript)
+                    self.process_recognized_text(transcript, snr_ratio)
         except Exception as e:
             self.get_logger().error(f"语音处理错误: {e}")
 
@@ -255,53 +325,82 @@ class OpenAISTTNodeWithVAD(Node):
             return ""
 
     def tts_status_callback(self, msg: Bool):
-        """TTS状态回调"""
+        """TTS状态回调：开启门控 + 挂起 + drain + 冻结背景能量"""
         if msg.data:
-            self.get_logger().info("检测到 TTS 正在播放，暂停监听")
-            self.listening = False
+            self.get_logger().info("检测到 TTS 正在播放，暂停/门控监听")
+            self.tts_playing = True
+            self._freeze_noise = True
+            self.resume_at = 0.0
+            self._should_drain = True
         else:
-            self.get_logger().info("TTS 播放完毕，恢复监听")
-            self.listening = True
+            self.get_logger().info(f"TTS 播放完毕，延迟恢复监听 ({int(RESUME_HANGOVER_SEC*1000)}ms)")
+            self.tts_playing = False
+            self.resume_at = time.time() + RESUME_HANGOVER_SEC
+            self._freeze_noise = True  # 挂起期仍冻结
+            self._should_drain = True
 
-    def process_recognized_text(self, text):
-        """处理识别的文本，检查唤醒词"""
+    def llm_response_callback(self, msg: String):
+        """缓存最近TTS文本，用于识别后兜底过滤"""
+        text = (msg.data or '').strip()
         if not text:
             return
-            
-        lower_text = text.lower()
-        match_found = False
-        matching_word = None
-        
-        # 更严格的唤醒词检查
-        for word in self.wake_words:
-            if word in lower_text:
-                match_found = True
-                matching_word = word
-                break
-                
-            # 模糊匹配，尤其针对句子开头
-            # 如果句子以唤醒词的部分开头，增加匹配可能性
-            if lower_text.startswith(word[:5]):  # 检查是否以唤醒词前5个字符开头
-                ratio = difflib.SequenceMatcher(None, lower_text[:len(word)], word).ratio()
-                if ratio > 0.7:  # 对句首更宽松的阈值
-                    match_found = True
-                    matching_word = word
-                    break
-                    
-            # 一般模糊匹配
-            ratio = difflib.SequenceMatcher(None, lower_text, word).ratio()
-            if ratio > 0.75:
-                match_found = True
-                matching_word = word
-                break
-                
-        if match_found:
+        # 在TTS播放或刚结束的短时间内才更新
+        if self.tts_playing or (self.resume_at and time.time() < self.resume_at + 1.0):
+            combined = (self._tts_recent_text + ' ' + text).strip()
+            self._tts_recent_text = combined[-1000:]
+            self._tts_recent_expiry = time.time() + 3.0
+
+    def _normalize_text(self, s: str) -> str:
+        s = s.lower().strip()
+        s = re.sub(r'[^a-z0-9\s]+', ' ', s)
+        s = re.sub(r'\s+', ' ', s)
+        return s
+
+    def process_recognized_text(self, text, snr_ratio: float | None = None):
+        """处理识别的文本，检查唤醒词（仅句首、边界、SNR门限），并做TTS自回放兜底过滤"""
+        if not text:
+            return
+
+        # 文本级兜底：若与最近TTS文本的前缀强包含，则丢弃
+        now = time.time()
+        if self._tts_recent_text and now < self._tts_recent_expiry:
+            norm_ref = self._normalize_text(self._tts_recent_text)
+            norm_txt = self._normalize_text(text)
+            # 仅检查识别结果的前缀（最多6词）是否包含在TTS文本中，避免全句相似度误用
+            words = norm_txt.split()
+            prefix = ' '.join(words[:6])
+            if prefix and prefix in norm_ref:
+                self.get_logger().info("丢弃自回放文本(前缀包含于最近TTS)")
+                return
+
+        lower_text = text.lower().strip()
+
+        # SNR 门限（可选但推荐）：过低则拒绝
+        if snr_ratio is not None and snr_ratio < SNR_GATE:
+            self.get_logger().info(f"拒绝低SNR片段 (SNR={snr_ratio:.2f} < {SNR_GATE})")
+            return
+
+        # 严格正则：句首 + 词边界
+        if self.wake_regex.search(lower_text):
             msg = String()
             msg.data = text
             self.publisher_.publish(msg)
-            self.get_logger().info(f"🔥 识别结果 (唤醒词激活 '{matching_word}'): {text}")
-        else:
-            self.get_logger().info(f"未检测到唤醒词: {text}")
+            self.get_logger().info(f"🔥 识别结果 (唤醒词激活 - 正则): {text}")
+            return
+
+        # 仅句首模糊匹配（高阈值），不做全句比对
+        for word in self.wake_words:
+            n = len(word)
+            candidate = lower_text[:max(n + 2, n)]  # 允许少量额外字符
+            ratio = difflib.SequenceMatcher(None, candidate, word).ratio()
+            if ratio >= 0.86:
+                msg = String()
+                msg.data = text
+                self.publisher_.publish(msg)
+                self.get_logger().info(f"🔥 识别结果 (唤醒词激活 - 句首模糊): {text}")
+                return
+
+        self.get_logger().info(f"未检测到唤醒词: {text}")
 
     def destroy_node(self):
         """清理资源"""

@@ -46,6 +46,22 @@ class OpenAITTSNode(Node):
             openai.api_key = self.api_key
             self.get_logger().info("OpenAI TTS 客户端已初始化。")
 
+        # 新增：TTS 配置（低延时 + 友好热情语气）
+        self.tts_model = os.environ.get("TTS_MODEL", "gpt-4o-mini-tts")
+        self.tts_voice = os.environ.get("TTS_VOICE", "coral")
+        self.tts_format = os.environ.get("TTS_FORMAT", "wav")  # wav/pcm 较低延迟；mp3 兼容性好
+        try:
+            self.tts_speed = float(os.environ.get("TTS_SPEED", "1.0"))  # 正常语速
+        except Exception:
+            self.tts_speed = 1.0
+        self.tts_instructions = os.environ.get(
+            "TTS_INSTRUCTIONS",
+            "Speak in a friendly, polite, cheerful, and enthusiastic tone with a normal speaking pace."
+        )
+        self.get_logger().info(
+            f"TTS配置: model={self.tts_model}, voice={self.tts_voice}, format={self.tts_format}, speed={self.tts_speed}"
+        )
+
     def listener_callback(self, msg: String):
         text = msg.data.strip()
         if not text:
@@ -79,18 +95,27 @@ class OpenAITTSNode(Node):
         self.call_openai_tts(text)
         time.sleep(0.3)
 
+    def _ext_for_format(self, fmt: str) -> str:
+        m = (fmt or '').lower()
+        if m in ("mp3", "wav", "opus", "aac", "flac", "pcm"):
+            return "." + m
+        return ".mp3"
+
     def call_openai_tts(self, text: str):
         try:
-            # 使用 OpenAI 新接口进行 TTS
+            # 使用 OpenAI TTS，并传入 response_format + instructions
             response = openai.audio.speech.create(
-                model="tts-1",  # 或使用 "tts-1-hd"
-                voice="nova",  # 可选：alloy, echo, fable, nova, onyx, shimmer
+                model=self.tts_model,
+                voice=self.tts_voice,
                 input=text,
-                speed=0.9 # 可选：0.5-2.0
+                response_format=self.tts_format,
+                speed=self.tts_speed,
+                instructions=self.tts_instructions,
             )
 
             # 检查是否启用文件保存模式
             save_mode = os.environ.get("TTS_SAVE_MODE", "false").lower() == "true"
+            ext = self._ext_for_format(self.tts_format)
             
             if save_mode:
                 # 保存到持久目录
@@ -99,7 +124,7 @@ class OpenAITTSNode(Node):
                 save_dir = "/workspaces/ros2_ws/audio_output"
                 os.makedirs(save_dir, exist_ok=True)
                 
-                audio_file = os.path.join(save_dir, f"tts_{timestamp}.mp3")
+                audio_file = os.path.join(save_dir, f"tts_{timestamp}{ext}")
                 with open(audio_file, "wb") as f:
                     f.write(response.content)
                 
@@ -110,7 +135,7 @@ class OpenAITTSNode(Node):
                 self.play_queue.put(audio_file)
             else:
                 # 原有的临时文件模式
-                temp_file = tempfile.mktemp(suffix=".mp3")
+                temp_file = tempfile.mktemp(suffix=ext)
                 with open(temp_file, "wb") as f:
                     f.write(response.content)
 
