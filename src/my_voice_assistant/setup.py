@@ -30,6 +30,7 @@ setup(
             'openai_tts_node = my_voice_assistant.openai_tts_node:main',
             'openai_stt_node = my_voice_assistant.realtime_stt_node:main',  # 🆕 修复入口点名称
             'openai_stt_node_with_vad = my_voice_assistant.realtime_stt_node:main',
+            'ten_vad_stt_node = my_voice_assistant.ten_vad_stt_node:main',
         ],
     },
 )

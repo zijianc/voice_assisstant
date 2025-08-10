@@ -39,6 +39,18 @@ class UWAKnowledgeBase:
                 metadata={"description": "UWA Campus Information"}
             )
             logging.info(f"Created new collection: {self.collection_name}")
+        
+        # New: optional assistant memory collection
+        self.memory_collection_name = "assistant_memory"
+        try:
+            self.memory_collection = self.chroma_client.get_collection(name=self.memory_collection_name)
+            logging.info(f"Loaded existing collection: {self.memory_collection_name}")
+        except:
+            self.memory_collection = self.chroma_client.create_collection(
+                name=self.memory_collection_name,
+                metadata={"description": "Assistant long-term conversational memory"}
+            )
+            logging.info(f"Created new collection: {self.memory_collection_name}")
             
         # Initialize with default UWA data if empty
         if self.collection.count() == 0:
@@ -158,7 +170,91 @@ class UWAKnowledgeBase:
         )
         
         logging.info(f"Added {len(documents)} documents to knowledge base")
-    
+
+    # New: assistant memory helpers -------------------------------------------------
+    def upsert_memory(self, memory_id: str, content: str, metadata: Optional[Dict] = None):
+        """Create or update a single memory document by ID."""
+        if not content:
+            return
+        metadata = metadata or {}
+        emb = self.embedding_model.encode([content]).tolist()
+        try:
+            existing = self.memory_collection.get(ids=[memory_id])
+            exists = bool(existing and existing.get("ids") and len(existing["ids"]) > 0)
+        except Exception:
+            exists = False
+        if exists:
+            # update
+            self.memory_collection.update(
+                ids=[memory_id],
+                embeddings=emb,
+                documents=[content],
+                metadatas=[metadata]
+            )
+            logging.info(f"Updated assistant_memory id={memory_id}")
+        else:
+            # add
+            self.memory_collection.add(
+                ids=[memory_id],
+                embeddings=emb,
+                documents=[content],
+                metadatas=[metadata]
+            )
+            logging.info(f"Added assistant_memory id={memory_id}")
+
+    def add_memory_entries(self, entries: List[Dict]):
+        """Add a batch of memory entries. Each item: {content, metadata?, id?}"""
+        if not entries:
+            return
+        contents = [e["content"] for e in entries if e.get("content")]
+        if not contents:
+            return
+        embeddings = self.embedding_model.encode(contents).tolist()
+        ids = []
+        metadatas = []
+        for e in entries:
+            content = e.get("content")
+            if not content:
+                continue
+            eid = e.get("id") or hashlib.md5(content.encode()).hexdigest()
+            ids.append(eid)
+            metadatas.append(e.get("metadata", {}))
+        self.memory_collection.add(
+            ids=ids,
+            embeddings=embeddings,
+            documents=contents,
+            metadatas=metadatas
+        )
+        logging.info(f"Added {len(ids)} assistant memory entries")
+
+    def search_memory(self, query: str, n_results: int = 3) -> List[Dict]:
+        """Semantic search over assistant memory."""
+        if not query:
+            return []
+        query_embedding = self.embedding_model.encode([query]).tolist()
+        results = self.memory_collection.query(
+            query_embeddings=query_embedding,
+            n_results=n_results,
+            include=["documents", "metadatas", "distances"]
+        )
+        formatted = []
+        if results and results.get("documents"):
+            for i in range(len(results["documents"][0])):
+                formatted.append({
+                    "content": results["documents"][0][i],
+                    "metadata": results["metadatas"][0][i],
+                    "distance": results["distances"][0][i]
+                })
+        return formatted
+
+    def get_memory_stats(self) -> Dict:
+        """Basic stats for assistant memory collection"""
+        try:
+            count = self.memory_collection.count()
+        except Exception:
+            count = 0
+        return {"total_memories": count}
+
     def search(self, query: str, n_results: int = 3, category_filter: Optional[str] = None) -> List[Dict]:
         """Search for relevant information"""
         # Generate query embedding
