@@ -7,24 +7,41 @@ Manages vector database for UWA campus information retrieval
 import os
 import json
 import hashlib
+
+# Disable ChromaDB telemetry to avoid posthog errors - must be set before import
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_DISABLE_TELEMETRY"] = "1"
+os.environ["DO_NOT_TRACK"] = "1"
+
 import chromadb
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Optional
 import logging
 
-# Disable ChromaDB telemetry to avoid posthog errors
-os.environ["ANONYMIZED_TELEMETRY"] = "False"
+# Additional telemetry disable after import
+try:
+    chromadb.telemetry.posthog.disabled = True
+except:
+    pass
 
 
 class UWAKnowledgeBase:
     def __init__(self, db_path: str = "./uwa_knowledge_db"):
         """Initialize UWA Knowledge Base with vector database"""
+        # 额外的遥测禁用设置
+        os.environ["ANONYMIZED_TELEMETRY"] = "False"
+        os.environ["CHROMA_DISABLE_TELEMETRY"] = "1"
+        
         self.db_path = db_path
         self.collection_name = "uwa_info"
         
-        # Initialize ChromaDB
-        self.chroma_client = chromadb.PersistentClient(path=db_path)
+        # Initialize ChromaDB with telemetry disabled
+        settings = Settings(
+            anonymized_telemetry=False,
+            allow_reset=True
+        )
+        self.chroma_client = chromadb.PersistentClient(path=db_path, settings=settings)
         
         # Initialize embedding model
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')

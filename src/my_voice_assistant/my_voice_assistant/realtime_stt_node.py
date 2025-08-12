@@ -32,10 +32,10 @@ CHANNELS = int(os.getenv("STT_CHANNELS", "1"))  # 会议麦可能是双声道；
 MODEL_NAME = os.getenv("OPENAI_STT_MODEL", "gpt-4o-mini-transcribe")
 
 # VAD 配置 - 调整这些参数来改善唤醒词检测（支持环境变量覆盖）
-VAD_THRESHOLD = float(os.getenv("STT_VAD_THRESHOLD", "0.015"))
-SILENCE_DURATION = float(os.getenv("STT_SILENCE_DURATION", "2.0"))
+VAD_THRESHOLD = float(os.getenv("STT_VAD_THRESHOLD", "0.02"))
+SILENCE_DURATION = float(os.getenv("STT_SILENCE_DURATION", "1.0"))  # 缩短到1秒
 MIN_SPEECH_DURATION = float(os.getenv("STT_MIN_SPEECH_DURATION", "0.2"))
-BUFFER_HISTORY = float(os.getenv("STT_BUFFER_HISTORY", "1.5"))
+BUFFER_HISTORY = float(os.getenv("STT_BUFFER_HISTORY", "0.3"))  # 缩短到0.5秒
 
 # 新增：门控/阈值/相似度/允许打断配置
 RESUME_HANGOVER_SEC = float(os.getenv("STT_RESUME_HANGOVER_SEC", "0.8"))
@@ -141,6 +141,7 @@ class OpenAISTTNodeWithVAD(Node):
         self.silence_counter = 0
         self.speech_counter = 0
         self.last_speech_time = 0
+        self.last_buffer_clear_time = time.time()  # 添加缓冲清理时间戳
         
         # 能量历史，用于动态阈值调整
         self.energy_history = collections.deque(maxlen=50)  # 存储最近50个能量值
@@ -236,10 +237,20 @@ class OpenAISTTNodeWithVAD(Node):
                 time.sleep(0.03)
                 continue
 
-            # 若已脱离门控，解除冻结
+            # 若已脱离门控，解除冻结并彻底清空所有缓冲
             if (not gated) and self._freeze_noise:
                 self._freeze_noise = False
                 self.resume_at = 0.0
+                # 彻底清空所有音频缓冲，防止处理旧音频
+                try:
+                    self.speech_buffer.clear()
+                    self.current_speech = bytearray()
+                    self.silence_counter = 0
+                    self.speech_counter = 0
+                    self.vad_state = "silence"
+                    self.get_logger().info("恢复监听：已清空所有音频缓冲")
+                except Exception:
+                    pass
                 self.get_logger().debug("恢复噪声估计")
 
             try:
@@ -251,6 +262,15 @@ class OpenAISTTNodeWithVAD(Node):
 
                 # 更新/获取动态阈值
                 dynamic_threshold = self.update_background_energy(rms)
+                
+                # 定期清理：如果长时间没有语音活动，清空缓冲区防止累积旧数据
+                if current_time - self.last_buffer_clear_time > 5.0 and self.vad_state == "silence":
+                    try:
+                        self.speech_buffer.clear()
+                        self.last_buffer_clear_time = current_time
+                        self.get_logger().debug("定期清理：清空历史缓冲区")
+                    except Exception:
+                        pass
                 
                 # VAD 状态机
                 if self.vad_state == "silence":
@@ -282,7 +302,8 @@ class OpenAISTTNodeWithVAD(Node):
                     # 添加音频到当前语音缓冲区（单声道）
                     self.current_speech.extend(audio_data)
                     
-                    if rms <= dynamic_threshold * 0.8:
+                    # 更敏感的静音检测：使用更低的阈值倍数
+                    if rms <= dynamic_threshold * 0.6:  # 从0.8降低到0.6
                         self.silence_counter += 1
                         silence_duration = self.silence_counter * self.chunk_size / self.sample_rate
                         
@@ -292,8 +313,8 @@ class OpenAISTTNodeWithVAD(Node):
                             speech_duration = len(self.current_speech) / (self.sample_rate * 2)
                             self.get_logger().info(f"🔇 检测到语音结束 (时长: {speech_duration:.2f}s)")
                             
-                            # 处理语音（过短忽略）
-                            if speech_duration > 0.5:
+                            # 处理语音（降低最短时长要求）
+                            if speech_duration > 0.3:  # 从0.5降低到0.3
                                 processing_thread = threading.Thread(
                                     target=self.process_speech_chunk,
                                     args=(bytes(self.current_speech), gated),

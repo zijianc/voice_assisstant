@@ -74,8 +74,22 @@ class LLMNode(Node):
             self.get_logger().info(f"📊 Knowledge Base: {stats['total_documents']} documents, "
                                  f"Categories: {list(stats['categories'].keys())}")
         except Exception as e:
-            self.get_logger().error(f"❌ Failed to initialize Knowledge Base: {e}")
-            self.knowledge_base = None
+            self.get_logger().error(f"❌ 知识库初始化失败: {e}")
+            self.get_logger().warning("🔧 尝试重建知识库...")
+            try:
+                # 删除损坏的数据库并重新创建
+                import shutil
+                db_path = "./uwa_knowledge_db"
+                if os.path.exists(db_path):
+                    shutil.rmtree(db_path)
+                    self.get_logger().info("🗑️ 已删除损坏的知识库")
+                
+                # 重新初始化
+                self.knowledge_base = UWAKnowledgeBase()
+                self.get_logger().info("✅ 知识库重建成功")
+            except Exception as e2:
+                self.get_logger().error(f"❌ 知识库重建失败: {e2}")
+                self.knowledge_base = None
             
         # New: assistant rolling summary + persistence + optional Chroma memory
         self.enable_rolling_summary = os.environ.get("ROLLING_SUMMARY_ENABLED", "1") == "1"

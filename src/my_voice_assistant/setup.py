@@ -12,7 +12,7 @@ setup(
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         (os.path.join('share', package_name), ['package.xml']),
     ],
-    install_requires=['setuptools', 'vosk', 'sounddevice', 'pyaudio','python-dotenv'],
+    install_requires=['setuptools', 'vosk', 'sounddevice', 'pyaudio','python-dotenv', 'dashscope', 'requests'],
     zip_safe=True,
     maintainer='zijian',
     maintainer_email='youremail@example.com',
@@ -23,11 +23,13 @@ setup(
         'console_scripts': [
             'vosk_stt_node = my_voice_assistant.vosk_stt_node:main',
             'llm_node = my_voice_assistant.llm_node:main',
+            'llm_node_cn = my_voice_assistant.llm_node_cn:main',
             'tts_node = my_voice_assistant.tts_node:main',
             'realtime_llm_node = my_voice_assistant.realtime_llm_node:main',
             'test_realtime_llm = my_voice_assistant.test_realtime_llm:main',
             'rl_stt_node = my_voice_assistant.realtime_stt:main',
             'openai_tts_node = my_voice_assistant.openai_tts_node:main',
+            'qwen_tts_node = my_voice_assistant.qwen_tts_node:main',
             'openai_stt_node = my_voice_assistant.realtime_stt_node:main',  # 🆕 修复入口点名称
             'openai_stt_node_with_vad = my_voice_assistant.realtime_stt_node:main',
             'ten_vad_stt_node = my_voice_assistant.ten_vad_stt_node:main',

@@ -61,15 +61,16 @@ HOP_SIZE = 256  # TEN VAD 默认帧大小 (16ms at 16kHz)
 CHANNELS = int(os.getenv("STT_CHANNELS", "1"))  # 单声道
 MODEL_NAME = os.getenv("OPENAI_STT_MODEL", "gpt-4o-mini-transcribe")
 
-# TEN VAD配置
-TEN_VAD_THRESHOLD = float(os.getenv("TEN_VAD_THRESHOLD", "0.5"))
-MIN_VOICE_FRAMES = int(os.getenv("TEN_MIN_VOICE_FRAMES", "5"))  # 最少连续语音帧数
-MAX_SILENCE_FRAMES = int(os.getenv("TEN_MAX_SILENCE_FRAMES", "50"))  # 最大静音帧数(约0.8秒)
+# TEN VAD配置 - 针对嘈杂环境优化
+TEN_VAD_THRESHOLD = float(os.getenv("TEN_VAD_THRESHOLD", "0.8"))  # 提高阈值应对噪音
+MIN_VOICE_FRAMES = int(os.getenv("TEN_MIN_VOICE_FRAMES", "8"))  # 增加连续帧要求
+MAX_SILENCE_FRAMES = int(os.getenv("TEN_MAX_SILENCE_FRAMES", "75"))  # 最大静音帧数(约1.2秒)
 BUFFER_HISTORY_FRAMES = int(os.getenv("TEN_BUFFER_HISTORY_FRAMES", "30"))  # 前缓冲帧数
 
-# 音频质量过滤
-MIN_AUDIO_ENERGY = float(os.getenv("TEN_MIN_AUDIO_ENERGY", "100"))  # 最小RMS能量
-MIN_SPEECH_DURATION_MS = float(os.getenv("TEN_MIN_SPEECH_DURATION_MS", "300"))  # 最短语音时长
+# 音频质量过滤 - 加强噪音过滤
+MIN_AUDIO_ENERGY = float(os.getenv("TEN_MIN_AUDIO_ENERGY", "200"))  # 提高最小能量要求
+MIN_SPEECH_DURATION_MS = float(os.getenv("TEN_MIN_SPEECH_DURATION_MS", "500"))  # 增加最短语音时长
+NOISE_FLOOR_ADAPTATION = float(os.getenv("TEN_NOISE_FLOOR_ADAPTATION", "0.3"))  # 噪音底噪自适应
 
 # 唤醒词配置
 WAKE_WORD_SIMILARITY = float(os.getenv("WAKE_WORD_SIMILARITY_THRESHOLD", "0.86"))
@@ -129,8 +130,8 @@ class TenVADSTTNode(Node):
         self._setup_audio_input()
         
         # 唤醒词配置
-        self.wake_words = ["hi captain", "hey captain", "hello captain"]
-        self.wake_regex = re.compile(r'^\s*(hi|hey|hello)\W+captain\b', re.I)
+        self.wake_words = ["你好帅哥", "你好 帅哥", "你好，帅哥"]
+        self.wake_regex = re.compile(r'^\s*你好[\s，、]*帅哥\b', re.I)
         
         # VAD状态管理
         self.vad_state = "silence"  # "silence", "speech", "processing"
@@ -138,6 +139,11 @@ class TenVADSTTNode(Node):
         self.current_speech_frames = []
         self.voice_frame_count = 0
         self.silence_frame_count = 0
+        
+        # 噪音自适应管理
+        self.noise_floor_history = collections.deque(maxlen=100)  # 保存最近100帧的能量
+        self.current_noise_floor = MIN_AUDIO_ENERGY
+        self.noise_update_counter = 0
         
         # 优化：预分配音频缓冲区，避免频繁内存分配
         self.max_speech_frames = int(SAMPLE_RATE * 10 / HOP_SIZE)  # 最多10秒语音
@@ -296,14 +302,40 @@ class TenVADSTTNode(Node):
     def _process_vad_result(self, voice_prob: float, voice_flag: int, audio_data: bytes, gated: bool):
         """处理TEN VAD结果并管理语音状态"""
         
+        # 更新噪音底噪估计（仅在静音期间）
+        if self.vad_state == "silence" and voice_flag == 0:
+            self._update_noise_floor(audio_data)
+        
+        # 使用自适应能量阈值进行额外过滤
+        adaptive_energy_threshold = max(self.current_noise_floor * 2.0, MIN_AUDIO_ENERGY)
+        
         if self.vad_state == "silence":
             # 始终维护历史缓冲区
             self.speech_buffer.append(audio_data)
             
-            if voice_flag == 1:  # 检测到语音
-                self.voice_frame_count += 1
-                if self.voice_frame_count == 1:
-                    self.get_logger().debug(f"检测到潜在语音开始 (概率: {voice_prob:.3f})")
+            if voice_flag == 1:  # TEN VAD检测到语音
+                # 额外的能量检查：确保音频能量足够高
+                try:
+                    audio_np = np.frombuffer(audio_data, dtype=np.int16)
+                    current_energy = np.sqrt(np.mean(audio_np.astype(np.float32) ** 2))
+                    
+                    # 同时满足TEN VAD和能量条件
+                    if current_energy >= adaptive_energy_threshold:
+                        self.voice_frame_count += 1
+                        if self.voice_frame_count == 1:
+                            self.get_logger().debug(f"检测到潜在语音开始 (概率: {voice_prob:.3f}, 能量: {current_energy:.1f})")
+                    else:
+                        # 能量不足，重置计数
+                        self.voice_frame_count = 0
+                        if DEBUG_MODE:
+                            self.get_logger().debug(f"能量不足，忽略VAD检测 (能量: {current_energy:.1f} < {adaptive_energy_threshold:.1f})")
+                        return
+                        
+                except Exception:
+                    # 如果能量计算失败，仍然使用TEN VAD结果
+                    self.voice_frame_count += 1
+                    if self.voice_frame_count == 1:
+                        self.get_logger().debug(f"检测到潜在语音开始 (概率: {voice_prob:.3f})")
                 
                 # 连续语音帧数达到阈值，确认语音开始
                 if self.voice_frame_count >= MIN_VOICE_FRAMES:
@@ -313,6 +345,10 @@ class TenVADSTTNode(Node):
                     
                     # 将历史缓冲区添加到当前语音
                     self.current_speech_frames = list(self.speech_buffer)
+                    
+                    # 打印语音开始提示
+                    print(f"\n🎤 开始录音... (语音概率: {voice_prob:.3f})")
+                    
                     self.get_logger().info(f"🎤 TEN VAD: 语音开始 (概率: {voice_prob:.3f})")
             else:
                 self.voice_frame_count = 0
@@ -329,6 +365,10 @@ class TenVADSTTNode(Node):
                 if self.silence_frame_count >= MAX_SILENCE_FRAMES:
                     self.vad_state = "processing"
                     speech_duration_ms = len(self.current_speech_frames) * 16
+                    
+                    # 打印语音结束提示
+                    print(f"🔇 录音结束，正在识别... (时长: {speech_duration_ms}ms)")
+                    
                     self.get_logger().info(f"🔇 TEN VAD: 语音结束 (时长: {speech_duration_ms}ms)")
                     
                     # 异步处理语音
@@ -347,6 +387,29 @@ class TenVADSTTNode(Node):
                     self.vad_state = "silence"
             else:
                 self.silence_frame_count = 0  # 重置静音计数
+
+    def _update_noise_floor(self, audio_data: bytes):
+        """更新噪音底噪估计"""
+        try:
+            audio_np = np.frombuffer(audio_data, dtype=np.int16)
+            current_energy = np.sqrt(np.mean(audio_np.astype(np.float32) ** 2))
+            
+            # 添加到历史记录
+            self.noise_floor_history.append(current_energy)
+            self.noise_update_counter += 1
+            
+            # 每50帧更新一次噪音底噪估计
+            if self.noise_update_counter >= 50 and len(self.noise_floor_history) >= 20:
+                # 使用第10百分位数作为噪音底噪
+                self.current_noise_floor = np.percentile(list(self.noise_floor_history), 10)
+                self.noise_update_counter = 0
+                
+                if DEBUG_MODE:
+                    self.get_logger().debug(f"更新噪音底噪: {self.current_noise_floor:.1f}")
+                    
+        except Exception as e:
+            if DEBUG_MODE:
+                self.get_logger().debug(f"噪音底噪更新失败: {e}")
 
     def _process_speech_chunk(self, speech_data: bytes, gated: bool = False):
         """处理检测到的语音片段"""
@@ -384,6 +447,10 @@ class TenVADSTTNode(Node):
             # 创建临时WAV文件
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
                 self._write_wav(tmp.name, speech_data)
+                
+                # 打印正在转录提示
+                print("🔄 正在转录语音...")
+                
                 transcript = self._transcribe_file(tmp.name)
                 
                 if transcript:
@@ -446,6 +513,7 @@ class TenVADSTTNode(Node):
 
         # 严格正则匹配唤醒词
         if self.wake_regex.search(lower_text):
+            print("\n🔥 检测到唤醒词 (正则匹配)!")
             self._publish_transcript(text)
             self.get_logger().info(f"🔥 唤醒词检测成功 (正则): {text}")
             return
@@ -456,6 +524,7 @@ class TenVADSTTNode(Node):
             candidate = lower_text[:max(n + 2, n)]
             ratio = difflib.SequenceMatcher(None, candidate, wake_word).ratio()
             if ratio >= WAKE_WORD_SIMILARITY:
+                print(f"\n🔥 检测到唤醒词 (模糊匹配 {ratio:.2f})!")
                 self._publish_transcript(text)
                 self.get_logger().info(f"🔥 唤醒词检测成功 (模糊 {ratio:.2f}): {text}")
                 return
@@ -465,6 +534,14 @@ class TenVADSTTNode(Node):
 
     def _publish_transcript(self, transcript: str):
         """发布转录结果到ROS话题"""
+        
+        # 打印识别到的语音
+        print("\n" + "="*60)
+        print("🎤 用户语音识别结果:")
+        print("-"*60)
+        print(f"'{transcript}'")
+        print("="*60)
+        
         msg = String()
         msg.data = transcript
         self.publisher_.publish(msg)
