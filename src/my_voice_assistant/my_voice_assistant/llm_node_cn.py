@@ -12,11 +12,12 @@ from typing import List, Dict
 import json
 
 # Handle relative imports when running as main module
-if __name__ == '__main__':
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-    from uwa_knowledge_base import UWAKnowledgeBase
-else:
-    from .uwa_knowledge_base import UWAKnowledgeBase
+# RAG功能已移除以提高响应速度
+# if __name__ == '__main__':
+#     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+#     from uwa_knowledge_base import UWAKnowledgeBase
+# else:
+#     from .uwa_knowledge_base import UWAKnowledgeBase
 
 load_dotenv()
 
@@ -57,40 +58,17 @@ class LLMNode(Node):
             "gpt-5-mini-2025-08-07"
         )
         try:
-            self.llm_temperature = float(os.environ.get("LLM_TEMPERATURE", "0.9"))
+            self.llm_temperature = float(os.environ.get("LLM_TEMPERATURE", "1"))
         except Exception:
-            self.llm_temperature = 0.6
+            self.llm_temperature = 1
         try:
             self.llm_max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "2048"))
         except Exception:
             self.llm_max_tokens = 300
         
-        # Initialize RAG Knowledge Base
-        try:
-            self.knowledge_base = UWAKnowledgeBase()
-            self.get_logger().info("✅ RAG Knowledge Base initialized successfully")
-            
-            # Log knowledge base stats
-            stats = self.knowledge_base.get_stats()
-            self.get_logger().info(f"📊 Knowledge Base: {stats['total_documents']} documents, "
-                                 f"Categories: {list(stats['categories'].keys())}")
-        except Exception as e:
-            self.get_logger().error(f"❌ 知识库初始化失败: {e}")
-            self.get_logger().warning("🔧 尝试重建知识库...")
-            try:
-                # 删除损坏的数据库并重新创建
-                import shutil
-                db_path = "./uwa_knowledge_db"
-                if os.path.exists(db_path):
-                    shutil.rmtree(db_path)
-                    self.get_logger().info("🗑️ 已删除损坏的知识库")
-                
-                # 重新初始化
-                self.knowledge_base = UWAKnowledgeBase()
-                self.get_logger().info("✅ 知识库重建成功")
-            except Exception as e2:
-                self.get_logger().error(f"❌ 知识库重建失败: {e2}")
-                self.knowledge_base = None
+        # RAG Knowledge Base功能已移除以提高响应速度
+        self.knowledge_base = None
+        self.get_logger().info("🚀 RAG功能已禁用，使用基础LLM模式")
             
         # New: assistant rolling summary + persistence + optional Chroma memory
         self.enable_rolling_summary = os.environ.get("ROLLING_SUMMARY_ENABLED", "1") == "1"
@@ -102,7 +80,7 @@ class LLMNode(Node):
         self.rolling_summary: str = ""
         self._load_persistent_memory()
             
-        self.get_logger().info("🚀 带RAG的LLM节点已启动，等待语音输入...")
+        self.get_logger().info("🚀 中文LLM节点已启动，等待语音输入... (RAG功能已禁用)")
 
         # Store past dialogue turns (user/assistant) to maintain conversational context
         self.conversation_history: list[dict[str, str]] = []  # each item: {"role": "...", "content": "..."}
@@ -153,16 +131,7 @@ class LLMNode(Node):
         parts: list[str] = []
         if self.enable_rolling_summary and self.rolling_summary:
             parts.append("🧠 ASSISTANT MEMORY SUMMARY (for continuity):\n" + self.rolling_summary.strip())
-        # Optional: query Chroma assistant_memory for relevant items
-        try:
-            if self.enable_memory_chroma and self.knowledge_base:
-                mem_hits = self.knowledge_base.search_memory(user_query, n_results=self.memory_search_top_k)
-                if mem_hits:
-                    parts.append("\n🧠 RELATED CONVERSATION MEMORY:")
-                    for i, hit in enumerate(mem_hits, 1):
-                        parts.append(f"{i}. {hit['content']}")
-        except Exception as e:
-            self.get_logger().warning(f"⚠️ Memory search error: {e}")
+        # 注意：RAG功能已禁用，不再进行知识库内存搜索
         return "\n\n".join(parts) if parts else ""
 
     def _maybe_update_rolling_summary(self):
@@ -195,8 +164,8 @@ class LLMNode(Node):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_payload},
                 ],
-                temperature=0.2,
-                max_tokens=self.summary_max_tokens,
+                temperature=1,
+                max_completion_tokens=self.summary_max_tokens,
                 stream=False,
             )
             content = resp.choices[0].message.content.strip() if resp.choices else ""
@@ -204,16 +173,7 @@ class LLMNode(Node):
                 self.rolling_summary = content
                 # Persist to JSON
                 self._save_persistent_memory()
-                # Also upsert into Chroma assistant_memory
-                try:
-                    if self.enable_memory_chroma and self.knowledge_base:
-                        self.knowledge_base.upsert_memory(
-                            memory_id="rolling_summary",
-                            content=self.rolling_summary,
-                            metadata={"type": "summary", "updated": datetime.utcnow().isoformat() + 'Z'}
-                        )
-                except Exception as e:
-                    self.get_logger().warning(f"⚠️ Failed to upsert rolling summary into Chroma: {e}")
+                # 注意：RAG功能已禁用，不再存储到Chroma
                 self.get_logger().info("🧠 Rolling summary updated")
         except Exception as e:
             self.get_logger().warning(f"⚠️ Rolling summary update failed: {e}")
@@ -239,46 +199,12 @@ class LLMNode(Node):
         self.call_chatgpt_with_rag(input_text)
     
     def search_knowledge_base(self, query: str, n_results: int = 3):
-        """Search UWA knowledge base for relevant information"""
-        if not self.knowledge_base:
-            return []
-            
-        try:
-            results = self.knowledge_base.search(query, n_results=n_results)
-            
-            if results:
-                self.get_logger().info(f"🔍 找到 {len(results)} 条相关知识条目")
-                for i, result in enumerate(results, 1):
-                    self.get_logger().debug(f"  {i+1}. [{result['metadata']['category']}] "
-                                          f"{result['content'][:50]}... (距离: {result['distance']:.3f})")
-            else:
-                self.get_logger().info("🔍 数据库中未找到相关知识")
-                
-            return results
-            
-        except Exception as e:
-            self.get_logger().error(f"❌ 知识搜索错误: {e}")
-            return []
+        """RAG功能已禁用，返回空结果"""
+        return []
     
     def format_rag_context(self, search_results: list) -> str:
-        """Format search results into context for the LLM"""
-        if not search_results:
-            return ""
-            
-        context_parts = ["📚 相关UWA信息："]
-        
-        for i, result in enumerate(search_results, 1):
-            building = result['metadata'].get('building', 'Unknown')
-            category = result['metadata'].get('category', 'general')
-            content = result['content']
-            
-            context_parts.append(f"{i}. [{category.upper()}] {content}")
-            if building != 'Campus General' and building != 'unknown':
-                context_parts[-1] += f" (位置: {building})"
-        
-        context_parts.append("\n请使用这些信息提供关于UWA个准确、有用个回答。")
-        
-        return "\n".join(context_parts)
+        """RAG功能已禁用，返回空字符串"""
+        return ""
     
     def filter_content(self, text: str) -> str:
         """Enhanced content filter for LLM responses"""
@@ -332,37 +258,15 @@ class LLMNode(Node):
             self.get_logger().info("⛔ 收到 tts_interrupt，中止本次流式输出")
 
     def call_chatgpt_with_rag(self, prompt: str) -> str:
-        """Enhanced ChatGPT call with RAG support + sentence-level streaming + end/full topics"""
+        """简化的ChatGPT调用，不使用RAG以提高响应速度"""
         try:
-            # Step 1: Search knowledge base for relevant context
-            search_results = self.search_knowledge_base(prompt, n_results=3)
-            rag_context = self.format_rag_context(search_results)
+            # 不进行知识库搜索，直接使用基础LLM
+            self.get_logger().info("🚀 使用基础LLM模式 (无RAG)")
             
-            # Optional: assistant memory context (rolling summary + relevant memory hits)
+            # Optional: assistant memory context (rolling summary only)
             memory_context = self._format_memory_context(prompt)
             
-            # Print RAG search results if found
-            if search_results:
-                print("\n" + "="*60)
-                print("🔍 RAG 知识库搜索结果:")
-                print("-"*60)
-                for i, result in enumerate(search_results, 1):
-                    category = result['metadata']['category']
-                    building = result['metadata']['building']
-                    content = result['content'][:80] + "..." if len(result['content']) > 80 else result['content']
-                    distance = result['distance']
-                    
-                    print(f"{i}. [{category}] {content}")
-                    if building not in ['Campus General', 'unknown']:
-                        print(f"   📍 位置: {building}")
-                    print(f"   📊 相关度: {(1-distance)*100:.1f}%")
-                print("="*60)
-            else:
-                print("\n" + "="*60)
-                print("🔍 RAG 搜索: 未找到相关知识库信息")
-                print("="*60)
-            
-            # Step 2: Build enhanced system prompt
+            # Step 2: Build basic system prompt
             base_system_prompt = """你是Captain，西澳大学（UWA）班车服务个友善语音助手。你个性格特点是：
 
 角色和背景：
@@ -392,29 +296,18 @@ class LLMNode(Node):
 - 需要时候主动提供额外帮助
 - 表达对乘客体验个真诚关心
 
-重要提醒：侬要是有下头提供个相关UWA信息，就用伊来提供准确、最新个答案。要优先用提供个信息，弗要用一般性知识。
-
 记牢：侬弗单单是提供信息 - 侬要让UWA班车上个每个人侪有更好个出行体验！
 
 语言要求：只用中文回答，使用苏州吴语风格，但要保证大家侪听得懂。"""
 
-            # Add RAG + Memory context if available
-            context_blocks = []
-            if rag_context:
-                context_blocks.append(rag_context)
-                self.get_logger().info(f"🧠 用 {len(search_results)} 条知识增强提示词")
-            else:
-                self.get_logger().info("🧠 使用基础提示词 (未找到相关知识)")
+            # Add Memory context if available
             if memory_context:
-                context_blocks.append(memory_context)
+                system_prompt = f"{base_system_prompt}\n\n{memory_context}"
                 self.get_logger().info("🧠 注入助手记忆上下文到提示词中")
-            
-            if context_blocks:
-                system_prompt = f"{base_system_prompt}\n\n" + "\n\n".join(context_blocks)
             else:
                 system_prompt = base_system_prompt
             
-            # Step 3: Make API call with enhanced context
+            # Step 3: Make API call
             # ---- Build message list with contextual history ----
             messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
 
@@ -429,12 +322,12 @@ class LLMNode(Node):
             response = self.client.chat.completions.create(
                 model=self.llm_model,
                 messages=messages,
-                temperature=self.llm_temperature,
-                max_tokens=self.llm_max_tokens,
+                temperature=1,
+                max_completion_tokens=self.llm_max_tokens,
                 stream=True
             )
 
-            self.get_logger().info("🚀 开始RAG增强回答生成...")
+            self.get_logger().info("🚀 开始基础回答生成...")
             final_reply = ""
             sentence_buf = ""
 
@@ -504,14 +397,9 @@ class LLMNode(Node):
             print("="*60 + "\n")
             
             # Log final results
-            rag_indicator = "🔍 RAG" if search_results else "💬 直接"
-            self.get_logger().info(f"✅ {rag_indicator} 回答完成: "
+            self.get_logger().info(f"✅ 💬 直接回答完成: "
                                  f"{len(final_reply)} 字符 -> {len(final_filtered)} 字符过滤后")
             self.get_logger().info(f"📝 完整回答: {final_filtered}")
-            
-            if search_results:
-                self.get_logger().info(f"📚 使用知识来源: "
-                                     f"{', '.join([r['metadata']['category'] for r in search_results])}")
 
             # ---- Update conversation history ----
             # Note: store the raw filtered assistant reply
@@ -527,7 +415,7 @@ class LLMNode(Node):
             return final_filtered
 
         except Exception as e:
-            self.get_logger().error(f"❌ 增强ChatGPT API错误: {str(e)}")
+            self.get_logger().error(f"❌ ChatGPT API错误: {str(e)}")
             return ""
 
 def main(args=None):

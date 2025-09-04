@@ -50,7 +50,7 @@ class QwenTTSNode(Node):
 
         # Qwen TTS 配置
         self.tts_model = os.environ.get("QWEN_TTS_MODEL", "qwen-tts-latest")
-        self.tts_voice = os.environ.get("QWEN_TTS_VOICE", "Dylan")  # 默认使用吴语女声
+        self.tts_voice = os.environ.get("QWEN_TTS_VOICE", "Jada")  # 默认使用吴语女声
         self.tts_format = "wav"  # Qwen TTS 输出 wav 格式
         self.get_logger().info(
             f"Qwen TTS配置: model={self.tts_model}, voice={self.tts_voice}, format={self.tts_format}"

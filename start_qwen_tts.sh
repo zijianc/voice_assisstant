@@ -24,7 +24,7 @@ echo "🔧 API Key: ${DASHSCOPE_API_KEY:0:10}..."
 
 # 设置 Qwen TTS 配置
 export QWEN_TTS_MODEL=${QWEN_TTS_MODEL:-"qwen-tts-latest"}
-export QWEN_TTS_VOICE=${QWEN_TTS_VOICE:-"Dylan"}
+export QWEN_TTS_VOICE=${QWEN_TTS_VOICE:-"Jada"}
 export TTS_SAVE_MODE=${TTS_SAVE_MODE:-"true"}
 export QWEN_TTS_STREAMING=${QWEN_TTS_STREAMING:-"true"}
 export QWEN_TTS_REALTIME=${QWEN_TTS_REALTIME:-"false"}

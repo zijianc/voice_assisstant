@@ -195,7 +195,7 @@ class LLMNode(Node):
                     {"role": "user", "content": user_payload},
                 ],
                 temperature=0.2,
-                max_tokens=self.summary_max_tokens,
+                max_completion_tokens=self.summary_max_tokens,
                 stream=False,
             )
             content = resp.choices[0].message.content.strip() if resp.choices else ""
@@ -427,7 +427,7 @@ Remember: You're not just providing information - you're enhancing the journey e
                 model=self.llm_model,
                 messages=messages,
                 temperature=self.llm_temperature,
-                max_tokens=self.llm_max_tokens,
+                max_completion_tokens=self.llm_max_tokens,
                 stream=True
             )
 
