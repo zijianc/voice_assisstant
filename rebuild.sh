@@ -8,7 +8,7 @@
 rm -rf build install log
 
 # Rebuild workspace
-colcon build
+colcon build --packages-select my_voice_assistant
 
 # Source setup
 source install/setup.bash

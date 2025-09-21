@@ -124,6 +124,28 @@ ros2 node list | grep stt
 ./start_realtime_stt.sh --debug
 ```
 
+## 🔇 关闭唤醒词检测
+
+如果你通过硬件开关来控制麦克风拾音，可以关闭唤醒词检测：
+```bash
+export STT_ENABLE_WAKE_WORD=0
+# 或在启动时通过 ROS 参数禁用
+ros2 run my_voice_assistant openai_stt_node_with_vad --ros-args -p enable_wake_word:=false
+```
+禁用后所有识别片段都会发布到 `/speech_text`，同时仍保留 TTS 自回放过滤和 SNR 门控，避免音频回环。
+
+## ⚡ 启用实时打断 (Barge-in)
+
+开启实时打断后，助手播放语音时麦克风仍保持监听，一旦检测到用户再次说话会立即发送 `tts_interrupt` 终止当前回复。
+```bash
+export STT_ALLOW_BARGE_IN=1
+export STT_BARGE_IN_INTERRUPT=1  # 可选，控制是否自动发送中断信号
+ros2 run my_voice_assistant openai_stt_node_with_vad --ros-args -p allow_barge_in:=true
+```
+- `STT_BARGE_IN_COOLDOWN` 可调节连续打断的冷却时间（秒，默认 0.7）。
+- 若希望仅保持监听、不主动发出中断信号，可将 `STT_BARGE_IN_INTERRUPT` 设为 0。
+- 建议搭配硬件静音或耳机收音，避免扬声器回放被重新识别。
+
 ## 📊 性能对比
 
 | 配置 | 延迟 | 准确性 | 资源消耗 | 适用场景 |

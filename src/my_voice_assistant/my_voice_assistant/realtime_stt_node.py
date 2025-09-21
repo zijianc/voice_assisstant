@@ -78,6 +78,19 @@ class OpenAISTTNodeWithVAD(Node):
         self.min_speech_duration = self.get_parameter('min_speech_duration').value
         self.buffer_history = self.get_parameter('buffer_history').value
 
+        # 是否启用唤醒词检测（可通过环境变量或参数关闭）
+        env_flag = os.getenv('STT_ENABLE_WAKE_WORD')
+        if env_flag is None:
+            env_flag = os.getenv('STT_WAKE_WORD_ENABLED')
+        if env_flag is None:
+            enable_wake_default = True
+        else:
+            enable_wake_default = env_flag.strip().lower() not in ('0', 'false', 'no')
+        self.declare_parameter('enable_wake_word', enable_wake_default)
+        self.enable_wake_word = bool(self.get_parameter('enable_wake_word').value)
+        if not self.enable_wake_word:
+            self.get_logger().info('🔓 Wake word detection disabled; forwarding all recognized speech segments directly.')
+
         # 设备选择与日志
         self.audio = pyaudio.PyAudio()
         chosen_index = None
@@ -130,9 +143,10 @@ class OpenAISTTNodeWithVAD(Node):
             raise
         self.stream.start_stream()
 
-        # 设置唤醒词与严格正则（仅句首、词边界）
-        self.wake_words = ["hi captain", "hey captain", "hello captain"]
-        self.wake_regex = re.compile(r'^\s*(hi|hey|hello)\W+captain\b', re.I)
+        # 设置唤醒词与严格正则（仅句首、词边界）- 更新为 "new way 4" 变体
+        self.wake_words = ["new way 4", "new way four", "neway 4", "neway four", "nu way 4", "nu way four", 
+                          "new way for", "neway for", "new way fore", "n way 4", "n way four"]
+        self.wake_regex = re.compile(r'^\s*(new\s*way\s*(4|four|for|fore)|neway\s*(4|four|for|fore)|nu\s*way\s*(4|four|for|fore)|n\s*way\s*(4|four|for|fore))\b', re.I)
 
         # VAD 相关变量
         self.vad_state = "silence"  # "silence", "speech", "processing"
@@ -372,6 +386,10 @@ class OpenAISTTNodeWithVAD(Node):
             # 创建临时WAV文件（单声道）
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
                 self.write_wav(tmp.name, speech_data)
+                
+                # 打印正在转录提示
+                print("🔄 正在转录语音...")
+                
                 transcript = self.transcribe_file(tmp.name)
                 if transcript:
                     self.process_recognized_text(transcript, snr_ratio)
@@ -395,8 +413,8 @@ class OpenAISTTNodeWithVAD(Node):
                 response = self.openai_client.audio.transcriptions.create(
                     model=MODEL_NAME,
                     file=f,
-                    # language="en",
-                    # prompt="The captain is the wake word. Expect phrases starting with Hi Captain, Hey Captain, or Hello Captain.",
+                    language="en",
+                    prompt="The wake word is 'new way 4' or 'new way four'. Users may pronounce it as 'neway 4', 'neway four', 'nu way 4', 'nu way four', 'new way for', or similar variations. Please transcribe accurately.",
                     temperature=0,
                     response_format="text"
                 )
@@ -460,20 +478,48 @@ class OpenAISTTNodeWithVAD(Node):
             self.get_logger().info(f"拒绝低SNR片段 (SNR={snr_ratio:.2f} < {SNR_GATE})")
             return
 
+        if not self.enable_wake_word:
+            # 打印识别到的语音
+            print("\n" + "="*60)
+            print("🎤 用户语音识别结果:")
+            print("-"*60)
+            print(f"'{text}'")
+            print("="*60)
+            
+            msg = String()
+            msg.data = text
+            self.publisher_.publish(msg)
+            self.get_logger().info(f"🎤 识别结果 (无唤醒词模式): {text}")
+            return
+
         # 严格正则：句首 + 词边界
         if self.wake_regex.search(lower_text):
+            # 打印识别到的语音
+            print("\n" + "="*60)
+            print("🎤 用户语音识别结果:")
+            print("-"*60)
+            print(f"'{text}'")
+            print("="*60)
+            
             msg = String()
             msg.data = text
             self.publisher_.publish(msg)
             self.get_logger().info(f"🔥 识别结果 (唤醒词激活 - 正则): {text}")
             return
 
-        # 仅句首模糊匹配（高阈值），不做全句比对
+        # 仅句首模糊匹配（提高宽容度），不做全句比对
         for word in self.wake_words:
             n = len(word)
-            candidate = lower_text[:max(n + 2, n)]  # 允许少量额外字符
+            candidate = lower_text[:max(n + 3, n)]  # 允许更多额外字符
             ratio = difflib.SequenceMatcher(None, candidate, word).ratio()
-            if ratio >= 0.86:
+            if ratio >= 0.75:  # 降低阈值，提高宽容度
+                # 打印识别到的语音
+                print("\n" + "="*60)
+                print("🎤 用户语音识别结果:")
+                print("-"*60)
+                print(f"'{text}'")
+                print("="*60)
+                
                 msg = String()
                 msg.data = text
                 self.publisher_.publish(msg)

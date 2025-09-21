@@ -15,8 +15,10 @@ import json
 if __name__ == '__main__':
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     from uwa_knowledge_base import UWAKnowledgeBase
+    from web_search_tools import WebSearchTools
 else:
     from .uwa_knowledge_base import UWAKnowledgeBase
+    from .web_search_tools import WebSearchTools
 
 load_dotenv()
 
@@ -53,7 +55,7 @@ class LLMNode(Node):
         # New: env-driven LLM configuration
         self.llm_model = os.environ.get(
             "LLM_MODEL",
-            "ft:gpt-4.1-mini-2025-04-14:personal:my-voice-assistant:BxxCKJUa"
+            "gpt-5-nano-2025-08-07"
         )
         try:
             self.llm_temperature = float(os.environ.get("LLM_TEMPERATURE", "0.6"))
@@ -64,15 +66,15 @@ class LLMNode(Node):
         except Exception:
             self.llm_max_tokens = 300
         
-        # Initialize RAG Knowledge Base
+        # Initialize RAG Knowledge Base (empty, no default data)
         try:
-            self.knowledge_base = UWAKnowledgeBase()
-            self.get_logger().info("✅ RAG Knowledge Base initialized successfully")
+            # Initialize with empty database (no default data)
+            self.knowledge_base = UWAKnowledgeBase(initialize_with_data=False)
+            self.get_logger().info("✅ RAG Knowledge Base initialized (empty, ready for future use)")
             
             # Log knowledge base stats
             stats = self.knowledge_base.get_stats()
-            self.get_logger().info(f"📊 Knowledge Base: {stats['total_documents']} documents, "
-                                 f"Categories: {list(stats['categories'].keys())}")
+            self.get_logger().info(f"📊 Knowledge Base: {stats['total_documents']} documents (empty as intended)")
         except Exception as e:
             self.get_logger().error(f"❌ 知识库初始化失败: {e}")
             self.get_logger().warning("🔧 尝试重建知识库...")
@@ -84,12 +86,32 @@ class LLMNode(Node):
                     shutil.rmtree(db_path)
                     self.get_logger().info("🗑️ 已删除损坏的知识库")
                 
-                # 重新初始化
-                self.knowledge_base = UWAKnowledgeBase()
-                self.get_logger().info("✅ 知识库重建成功")
+                # 重新初始化 (空数据库)
+                self.knowledge_base = UWAKnowledgeBase(initialize_with_data=False)
+                self.get_logger().info("✅ 知识库重建成功 (空数据库)")
             except Exception as e2:
                 self.get_logger().error(f"❌ 知识库重建失败: {e2}")
                 self.knowledge_base = None
+        
+        # Initialize Web Search Tools
+        try:
+            self.web_search_tools = WebSearchTools()
+            self.get_logger().info("✅ Web Search Tools initialized successfully")
+            
+            # Configure function calling
+            self.enable_web_search = os.environ.get("ENABLE_WEB_SEARCH", "1") == "1"
+            self.web_search_functions = self.web_search_tools.get_available_functions() if self.enable_web_search else []
+            
+            if self.enable_web_search:
+                self.get_logger().info(f"🌐 Web search enabled with {len(self.web_search_functions)} functions")
+            else:
+                self.get_logger().info("🌐 Web search disabled by configuration")
+                
+        except Exception as e:
+            self.get_logger().error(f"❌ Web search tools initialization failed: {e}")
+            self.web_search_tools = None
+            self.enable_web_search = False
+            self.web_search_functions = []
             
         # New: assistant rolling summary + persistence + optional Chroma memory
         self.enable_rolling_summary = os.environ.get("ROLLING_SUMMARY_ENABLED", "1") == "1"
@@ -260,11 +282,11 @@ class LLMNode(Node):
             return []
     
     def format_rag_context(self, search_results: list) -> str:
-        """Format search results into context for the LLM"""
+        """Format search results into context for the LLM (as backup information)"""
         if not search_results:
             return ""
             
-        context_parts = ["📚 RELEVANT UWA INFORMATION:"]
+        context_parts = ["📚 BACKUP UWA INFORMATION (Use only if web search is insufficient):"]
         
         for i, result in enumerate(search_results, 1):
             building = result['metadata'].get('building', 'Unknown')
@@ -275,7 +297,7 @@ class LLMNode(Node):
             if building != 'Campus General' and building != 'unknown':
                 context_parts[-1] += f" (Located: {building})"
         
-        context_parts.append("\nPlease use this information to provide accurate, helpful responses about UWA.")
+        context_parts.append("\nNOTE: This is backup information. Prioritize web search results for the most current data.")
         
         return "\n".join(context_parts)
     
@@ -330,38 +352,93 @@ class LLMNode(Node):
             self._interrupted = True
             self.get_logger().info("⛔ 收到 tts_interrupt，中止本次流式输出")
 
-    def call_chatgpt_with_rag(self, prompt: str) -> str:
-        """Enhanced ChatGPT call with RAG support + sentence-level streaming + end/full topics"""
+    def handle_function_call(self, function_name: str, arguments: dict) -> dict:
+        """
+        Handle function calls from OpenAI Function Calling
+        
+        Args:
+            function_name: Name of the function to call
+            arguments: Arguments for the function
+            
+        Returns:
+            Dict with function result
+        """
         try:
-            # Step 1: Search knowledge base for relevant context
-            search_results = self.search_knowledge_base(prompt, n_results=3)
-            rag_context = self.format_rag_context(search_results)
+            if not self.web_search_tools:
+                return {'error': 'Web search tools not available'}
+            
+            if function_name == 'search_web':
+                query = arguments.get('query', '')
+                max_results = arguments.get('max_results', 3)
+                return self.web_search_tools.search_web(query, max_results)
+            
+            elif function_name == 'search_uwa_transport':
+                query = arguments.get('query', 'UWA bus transport perth')
+                return self.web_search_tools.search_uwa_transport(query)
+            
+            elif function_name == 'search_current_weather':
+                location = arguments.get('location', 'Perth UWA')
+                return self.web_search_tools.search_current_weather(location)
+            
+            elif function_name == 'search_uwa_events':
+                query = arguments.get('query', 'UWA events today')
+                return self.web_search_tools.search_uwa_events(query)
+            
+            else:
+                return {'error': f'Unknown function: {function_name}'}
+                
+        except Exception as e:
+            self.get_logger().error(f"❌ Function call error ({function_name}): {e}")
+            return {'error': str(e)}
+
+    def format_function_result(self, function_name: str, result: dict) -> str:
+        """
+        Format function call results for inclusion in prompt
+        
+        Args:
+            function_name: Name of the called function
+            result: Result from the function call
+            
+        Returns:
+            Formatted string for prompt inclusion
+        """
+        if not result.get('success'):
+            return f"🌐 WEB SEARCH ({function_name}) FAILED: {result.get('error', 'Unknown error')}"
+        
+        formatted_parts = [f"🌐 REAL-TIME WEB SEARCH RESULTS ({function_name}):"]
+        formatted_parts.append(f"Query: {result['query']}")
+        formatted_parts.append(f"Source: {result['source']}")
+        formatted_parts.append(f"Time: {result['timestamp']}")
+        
+        if result.get('results'):
+            for i, res in enumerate(result['results'], 1):
+                formatted_parts.append(f"{i}. {res['title']}: {res['content']}")
+                if res.get('url'):
+                    formatted_parts.append(f"   URL: {res['url']}")
+        else:
+            formatted_parts.append("No specific results found.")
+        
+        formatted_parts.append("Please use this real-time information to provide an accurate, current response.")
+        
+        return "\n".join(formatted_parts)
+
+    def call_chatgpt_with_rag(self, prompt: str) -> str:
+        """Enhanced ChatGPT call with Web Search + LLM knowledge (RAG disabled)"""
+        try:
+            # Step 1: RAG search is now DISABLED - rely on web search + LLM knowledge only
+            search_results = []
+            rag_context = ""
             
             # Optional: assistant memory context (rolling summary + relevant memory hits)
             memory_context = self._format_memory_context(prompt)
             
-            # Print RAG search results if found
-            if search_results:
-                print("\n" + "="*60)
-                print("🔍 RAG 知识库搜索结果:")
-                print("-"*60)
-                for i, result in enumerate(search_results, 1):
-                    category = result['metadata']['category']
-                    building = result['metadata']['building']
-                    content = result['content'][:80] + "..." if len(result['content']) > 80 else result['content']
-                    distance = result['distance']
-                    
-                    print(f"{i}. [{category}] {content}")
-                    if building not in ['Campus General', 'unknown']:
-                        print(f"   📍 位置: {building}")
-                    print(f"   📊 相关度: {(1-distance)*100:.1f}%")
-                print("="*60)
-            else:
-                print("\n" + "="*60)
-                print("🔍 RAG 搜索: 未找到相关知识库信息")
-                print("="*60)
+            # Print notice about RAG being disabled
+            print("\n" + "="*60)
+            print("� 搜索策略: 纯网络搜索 + LLM内置知识")
+            print("� RAG本地知识库已禁用")
+            print("="*60)
             
-            # Step 2: Build enhanced system prompt
+            # Step 2: Build enhanced system prompt (web search + LLM knowledge only)
             base_system_prompt = """You are Captain, the friendly voice assistant for the UWA (University of Western Australia) shuttle bus service. Your personality is:
 
 ROLE & CONTEXT:
@@ -383,6 +460,24 @@ PERSONALITY TRAITS:
 - General campus navigation help
 - Safety and accessibility information
 
+🌐 INFORMATION SOURCES:
+You have TWO primary information sources:
+1. **Web Search Functions**: For current, real-time information
+2. **Your Built-in Knowledge**: General knowledge about UWA and Perth
+
+SEARCH STRATEGY (WEB + LLM KNOWLEDGE):
+1. Use web search for:
+   - Current/real-time information (weather, events, schedules)
+   - Specific UWA queries that need verification
+   - Time-sensitive information
+   - Current operating hours and services
+
+2. Use your built-in knowledge for:
+   - General UWA campus information
+   - Common questions about facilities
+   - Basic navigation and directions
+   - Historical or factual information
+
 COMMUNICATION STYLE:
 - Keep responses concise but complete (aim for 1-3 sentences)
 - Use clear punctuation and an upbeat, cheerful tone suitable for spoken TTS
@@ -390,21 +485,20 @@ COMMUNICATION STYLE:
 - Address passengers directly and personally
 - Offer additional help when relevant
 - Express genuine care for passenger experience
+- When using web search, mention you're providing "current" information
+- When using built-in knowledge, provide confident, helpful answers
 
-IMPORTANT: When you have relevant UWA information provided below, use it to give accurate, up-to-date answers. Always prioritize the provided information over general knowledge.
+IMPORTANT: Combine web search results with your own knowledge to provide comprehensive, accurate answers. No local knowledge database is available - rely on web search for verification and your training knowledge for general information.
 
 Remember: You're not just providing information - you're enhancing the journey experience for everyone aboard the UWA shuttle!"""
 
-            # Add RAG + Memory context if available
+            # Add Memory context if available (RAG context removed)
             context_blocks = []
-            if rag_context:
-                context_blocks.append(rag_context)
-                self.get_logger().info(f"🧠 Enhanced prompt with {len(search_results)} knowledge entries")
-            else:
-                self.get_logger().info("🧠 Using base prompt (no relevant knowledge found)")
             if memory_context:
                 context_blocks.append(memory_context)
                 self.get_logger().info("🧠 Injected assistant memory context into prompt")
+            
+            self.get_logger().info("🌐 Using web search + LLM knowledge only (RAG disabled)")
             
             if context_blocks:
                 system_prompt = f"{base_system_prompt}\n\n" + "\n\n".join(context_blocks)
@@ -423,17 +517,26 @@ Remember: You're not just providing information - you're enhancing the journey e
             # Add the new user message
             messages.append({"role": "user", "content": prompt})
             
+            # Prepare function calling if enabled - prefer web search
+            function_calls_kwargs = {}
+            if self.enable_web_search and self.web_search_functions:
+                function_calls_kwargs['tools'] = [{"type": "function", "function": func} for func in self.web_search_functions]
+                # Changed from "auto" to encourage more web searches
+                function_calls_kwargs['tool_choice'] = "auto"  # Let model decide, but with web-first prompt bias
+            
             response = self.client.chat.completions.create(
                 model=self.llm_model,
                 messages=messages,
                 temperature=self.llm_temperature,
                 max_completion_tokens=self.llm_max_tokens,
-                stream=True
+                stream=True,
+                **function_calls_kwargs
             )
 
             self.get_logger().info("🚀 Starting RAG-enhanced response generation...")
             final_reply = ""
             sentence_buf = ""
+            function_calls_pending = []
 
             def flush_sentences_if_ready(force: bool = False):
                 nonlocal sentence_buf
@@ -461,18 +564,87 @@ Remember: You're not just providing information - you're enhancing the journey e
                         self.publisher_.publish(msg)
                         self.get_logger().debug(f"📡 Published sentence: {msg.data}")
 
+            # Handle streaming response with potential function calls
             for chunk in response:
                 if self._interrupted:
                     self.get_logger().info("⏹️ 流式输出被中止 (interrupt)")
                     break
                 if chunk.choices:
-                    delta = chunk.choices[0].delta
+                    choice = chunk.choices[0]
+                    delta = choice.delta
+                    
+                    # Handle function calls
+                    if delta.tool_calls:
+                        for tool_call in delta.tool_calls:
+                            if tool_call.function:
+                                function_calls_pending.append({
+                                    'id': tool_call.id,
+                                    'name': tool_call.function.name,
+                                    'arguments': tool_call.function.arguments
+                                })
+                    
+                    # Handle regular content
                     content = delta.content if delta.content else ""
                     if content:
                         final_reply += content
                         # buffer and attempt flushing on sentence boundaries
                         sentence_buf += content
                         flush_sentences_if_ready(force=False)
+
+            # Process any pending function calls
+            if function_calls_pending:
+                self.get_logger().info(f"🔧 Processing {len(function_calls_pending)} function calls...")
+                
+                function_results = []
+                for call in function_calls_pending:
+                    try:
+                        arguments = json.loads(call['arguments']) if isinstance(call['arguments'], str) else call['arguments']
+                        result = self.handle_function_call(call['name'], arguments)
+                        function_results.append({
+                            'function_name': call['name'],
+                            'result': result
+                        })
+                        self.get_logger().info(f"✅ Function call {call['name']} completed")
+                    except Exception as e:
+                        self.get_logger().error(f"❌ Function call {call['name']} failed: {e}")
+                        function_results.append({
+                            'function_name': call['name'],
+                            'result': {'error': str(e)}
+                        })
+                
+                # If we have function results, make a second API call to integrate them
+                if function_results:
+                    function_context = "\n\n".join([
+                        self.format_function_result(fr['function_name'], fr['result'])
+                        for fr in function_results
+                    ])
+                    
+                    # Add function results to messages and get final response
+                    messages.append({"role": "assistant", "content": final_reply if final_reply else "I need to search for current information."})
+                    messages.append({"role": "user", "content": f"Based on this real-time information, please provide a complete answer:\n\n{function_context}"})
+                    
+                    # Second API call without function calling to get final answer
+                    second_response = self.client.chat.completions.create(
+                        model=self.llm_model,
+                        messages=messages,
+                        temperature=self.llm_temperature,
+                        max_completion_tokens=self.llm_max_tokens,
+                        stream=True
+                    )
+                    
+                    function_enhanced_reply = ""
+                    for chunk in second_response:
+                        if self._interrupted:
+                            break
+                        if chunk.choices:
+                            delta = chunk.choices[0].delta
+                            content = delta.content if delta.content else ""
+                            if content:
+                                function_enhanced_reply += content
+                                sentence_buf += content
+                                flush_sentences_if_ready(force=False)
+                    
+                    final_reply = function_enhanced_reply if function_enhanced_reply else final_reply
 
             # 处理剩余缓冲
             if sentence_buf.strip():
@@ -501,14 +673,14 @@ Remember: You're not just providing information - you're enhancing the journey e
             print("="*60 + "\n")
             
             # Log final results
-            rag_indicator = "🔍 RAG" if search_results else "💬 Direct"
-            self.get_logger().info(f"✅ {rag_indicator} response complete: "
+            web_indicator = "🌐 Web+LLM" if function_calls_pending else "🧠 LLM Only"
+            self.get_logger().info(f"✅ {web_indicator} response complete: "
                                  f"{len(final_reply)} chars -> {len(final_filtered)} chars filtered")
             self.get_logger().info(f"📝 Complete Response: {final_filtered}")
             
-            if search_results:
-                self.get_logger().info(f"📚 Used knowledge from: "
-                                     f"{', '.join([r['metadata']['category'] for r in search_results])}")
+            if function_calls_pending:
+                function_names = [call['name'] for call in function_calls_pending]
+                self.get_logger().info(f"🌐 Used web search functions: {', '.join(function_names)}")
 
             # ---- Update conversation history ----
             # Note: store the raw filtered assistant reply

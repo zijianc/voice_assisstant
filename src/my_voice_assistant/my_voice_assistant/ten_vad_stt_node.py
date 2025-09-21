@@ -130,8 +130,8 @@ class TenVADSTTNode(Node):
         self._setup_audio_input()
         
         # 唤醒词配置
-        self.wake_words = ["你好帅哥", "你好 帅哥", "你好，帅哥"]
-        self.wake_regex = re.compile(r'^\s*你好[\s，、]*帅哥\b', re.I)
+        self.wake_words = ["nUWAy", "new way", "nu way", "en you way", "nuway", "n u way"]
+        self.wake_regex = re.compile(r'^\s*(n\s*u\s*way|new\s*way|nu\s*way|en\s*you\s*way|nuway)\b', re.I)
         
         # VAD状态管理
         self.vad_state = "silence"  # "silence", "speech", "processing"

@@ -27,14 +27,26 @@ except:
 
 
 class UWAKnowledgeBase:
-    def __init__(self, db_path: str = "./uwa_knowledge_db"):
-        """Initialize UWA Knowledge Base with vector database"""
+    def __init__(self, db_path: str = "./uwa_knowledge_db", initialize_with_data: bool = None):
+        """Initialize UWA Knowledge Base with vector database
+        
+        Args:
+            db_path: Path to the database
+            initialize_with_data: Whether to initialize with default data (None=auto, True=always, False=never)
+        """
         # 额外的遥测禁用设置
         os.environ["ANONYMIZED_TELEMETRY"] = "False"
         os.environ["CHROMA_DISABLE_TELEMETRY"] = "1"
         
         self.db_path = db_path
         self.collection_name = "uwa_info"
+        
+        # Control default data initialization
+        if initialize_with_data is None:
+            # Auto-detect from environment
+            self.initialize_with_data = os.environ.get("INITIALIZE_RAG_DATA", "0") == "1"
+        else:
+            self.initialize_with_data = initialize_with_data
         
         # Initialize ChromaDB with telemetry disabled
         settings = Settings(
@@ -69,9 +81,11 @@ class UWAKnowledgeBase:
             )
             logging.info(f"Created new collection: {self.memory_collection_name}")
             
-        # Initialize with default UWA data if empty
-        if self.collection.count() == 0:
+        # Initialize with default UWA data if empty AND if enabled
+        if self.collection.count() == 0 and self.initialize_with_data:
             self._initialize_default_data()
+        elif not self.initialize_with_data:
+            logging.info("Default data initialization disabled - keeping database empty")
     
     def _initialize_default_data(self):
         """Initialize with default UWA campus information"""
