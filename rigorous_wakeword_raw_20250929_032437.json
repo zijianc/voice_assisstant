@@ -1,0 +1,915 @@
+{
+  "test_config": {
+    "snr_levels": [
+      20,
+      10,
+      0
+    ],
+    "samples_per_snr": 30,
+    "rounds": 1,
+    "start_time": "2025-09-29T03:24:37.699664",
+    "end_time": "2025-09-29T03:25:23.634129"
+  },
+  "results": [
+    {
+      "timestamp": "2025-09-29T03:24:38.425068",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 0,
+      "sample_type": "positive",
+      "sample_text": "new way 4, what's the weather?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:38.926427",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 1,
+      "sample_type": "positive",
+      "sample_text": "new way four, show me the menu",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:39.427476",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 2,
+      "sample_type": "positive",
+      "sample_text": "neway 4, tell me the time",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:39.928231",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 3,
+      "sample_type": "positive",
+      "sample_text": "new way 4, what dining options are available?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:40.430598",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 4,
+      "sample_type": "positive",
+      "sample_text": "new way four, what's the library schedule?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:40.932470",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 5,
+      "sample_type": "positive",
+      "sample_text": "new way 4, how do I get to the engineering building?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:41.433886",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 6,
+      "sample_type": "positive",
+      "sample_text": "neway four, what time does the shuttle arrive?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:41.936349",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 7,
+      "sample_type": "positive",
+      "sample_text": "new way 4, where can I find parking?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:42.438423",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 8,
+      "sample_type": "positive",
+      "sample_text": "new way four, what events are happening today?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:42.941139",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 9,
+      "sample_type": "positive",
+      "sample_text": "new way 4, how late is the library open?",
+      "detected": false,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:43.443202",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 0,
+      "sample_type": "negative",
+      "sample_text": "we need a new way to solve this problem",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:43.944569",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 1,
+      "sample_type": "negative",
+      "sample_text": "the way forward is unclear",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:44.447462",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 2,
+      "sample_type": "negative",
+      "sample_text": "show me way 4 to the destination",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:44.950181",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 3,
+      "sample_type": "negative",
+      "sample_text": "this is a new approach",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:45.452645",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 4,
+      "sample_type": "negative",
+      "sample_text": "find another way please",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:45.954502",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 5,
+      "sample_type": "negative",
+      "sample_text": "the fourth way might work",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:46.455755",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 6,
+      "sample_type": "negative",
+      "sample_text": "new methods are needed",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:46.958619",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 7,
+      "sample_type": "negative",
+      "sample_text": "which way should we go",
+      "detected": true,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:47.462459",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 8,
+      "sample_type": "negative",
+      "sample_text": "the new building is way over there",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:47.963643",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 9,
+      "sample_type": "negative",
+      "sample_text": "four ways to improve efficiency",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:48.466302",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 0,
+      "sample_type": "confusing",
+      "sample_text": "the way 4 ward building",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:48.968635",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 1,
+      "sample_type": "confusing",
+      "sample_text": "a new way, for sure",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:49.472117",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 2,
+      "sample_type": "confusing",
+      "sample_text": "way 4 getting things done",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:49.973928",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 3,
+      "sample_type": "confusing",
+      "sample_text": "new way forward please",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:50.476481",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 4,
+      "sample_type": "confusing",
+      "sample_text": "show me the way, 4 real",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:50.979241",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 5,
+      "sample_type": "confusing",
+      "sample_text": "new way, 4 minutes please",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:51.480823",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 6,
+      "sample_type": "confusing",
+      "sample_text": "the way, 4 sure it works",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:51.982912",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 7,
+      "sample_type": "confusing",
+      "sample_text": "new way of doing things, 4 ever",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:52.485662",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 8,
+      "sample_type": "confusing",
+      "sample_text": "way better than 4 options",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:52.989328",
+      "snr_level": 20,
+      "round": 1,
+      "sample_idx": 9,
+      "sample_type": "confusing",
+      "sample_text": "new way, approximately 4 steps",
+      "detected": true,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:53.490628",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 0,
+      "sample_type": "positive",
+      "sample_text": "new way 4, what's the weather?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:53.992816",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 1,
+      "sample_type": "positive",
+      "sample_text": "new way four, show me the menu",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:54.494528",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 2,
+      "sample_type": "positive",
+      "sample_text": "neway 4, tell me the time",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:54.997594",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 3,
+      "sample_type": "positive",
+      "sample_text": "new way 4, what dining options are available?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:55.499822",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 4,
+      "sample_type": "positive",
+      "sample_text": "new way four, what's the library schedule?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:56.002417",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 5,
+      "sample_type": "positive",
+      "sample_text": "new way 4, how do I get to the engineering building?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:56.504992",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 6,
+      "sample_type": "positive",
+      "sample_text": "neway four, what time does the shuttle arrive?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:57.007026",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 7,
+      "sample_type": "positive",
+      "sample_text": "new way 4, where can I find parking?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:57.508844",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 8,
+      "sample_type": "positive",
+      "sample_text": "new way four, what events are happening today?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:58.011557",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 9,
+      "sample_type": "positive",
+      "sample_text": "new way 4, how late is the library open?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:24:58.512694",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 0,
+      "sample_type": "negative",
+      "sample_text": "we need a new way to solve this problem",
+      "detected": true,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:59.014418",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 1,
+      "sample_type": "negative",
+      "sample_text": "the way forward is unclear",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:24:59.515548",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 2,
+      "sample_type": "negative",
+      "sample_text": "show me way 4 to the destination",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:00.019148",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 3,
+      "sample_type": "negative",
+      "sample_text": "this is a new approach",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:00.522185",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 4,
+      "sample_type": "negative",
+      "sample_text": "find another way please",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:01.024271",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 5,
+      "sample_type": "negative",
+      "sample_text": "the fourth way might work",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:01.525446",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 6,
+      "sample_type": "negative",
+      "sample_text": "new methods are needed",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:02.026643",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 7,
+      "sample_type": "negative",
+      "sample_text": "which way should we go",
+      "detected": true,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:02.529026",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 8,
+      "sample_type": "negative",
+      "sample_text": "the new building is way over there",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:03.032602",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 9,
+      "sample_type": "negative",
+      "sample_text": "four ways to improve efficiency",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:03.533480",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 0,
+      "sample_type": "confusing",
+      "sample_text": "the way 4 ward building",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:04.035060",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 1,
+      "sample_type": "confusing",
+      "sample_text": "a new way, for sure",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:04.537893",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 2,
+      "sample_type": "confusing",
+      "sample_text": "way 4 getting things done",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:05.038240",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 3,
+      "sample_type": "confusing",
+      "sample_text": "new way forward please",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:05.539255",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 4,
+      "sample_type": "confusing",
+      "sample_text": "show me the way, 4 real",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:06.040462",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 5,
+      "sample_type": "confusing",
+      "sample_text": "new way, 4 minutes please",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:06.544618",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 6,
+      "sample_type": "confusing",
+      "sample_text": "the way, 4 sure it works",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:07.047420",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 7,
+      "sample_type": "confusing",
+      "sample_text": "new way of doing things, 4 ever",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:07.547873",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 8,
+      "sample_type": "confusing",
+      "sample_text": "way better than 4 options",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:08.049164",
+      "snr_level": 10,
+      "round": 1,
+      "sample_idx": 9,
+      "sample_type": "confusing",
+      "sample_text": "new way, approximately 4 steps",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:08.550905",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 0,
+      "sample_type": "positive",
+      "sample_text": "new way 4, what's the weather?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:25:09.053712",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 1,
+      "sample_type": "positive",
+      "sample_text": "new way four, show me the menu",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:25:09.556744",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 2,
+      "sample_type": "positive",
+      "sample_text": "neway 4, tell me the time",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:25:10.058180",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 3,
+      "sample_type": "positive",
+      "sample_text": "new way 4, what dining options are available?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:25:10.564834",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 4,
+      "sample_type": "positive",
+      "sample_text": "new way four, what's the library schedule?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:25:11.065810",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 5,
+      "sample_type": "positive",
+      "sample_text": "new way 4, how do I get to the engineering building?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:25:11.566754",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 6,
+      "sample_type": "positive",
+      "sample_text": "neway four, what time does the shuttle arrive?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:25:12.070830",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 7,
+      "sample_type": "positive",
+      "sample_text": "new way 4, where can I find parking?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:25:12.573268",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 8,
+      "sample_type": "positive",
+      "sample_text": "new way four, what events are happening today?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:25:13.075154",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 9,
+      "sample_type": "positive",
+      "sample_text": "new way 4, how late is the library open?",
+      "detected": true,
+      "should_detect": true
+    },
+    {
+      "timestamp": "2025-09-29T03:25:13.577586",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 0,
+      "sample_type": "negative",
+      "sample_text": "we need a new way to solve this problem",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:14.079549",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 1,
+      "sample_type": "negative",
+      "sample_text": "the way forward is unclear",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:14.584398",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 2,
+      "sample_type": "negative",
+      "sample_text": "show me way 4 to the destination",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:15.086556",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 3,
+      "sample_type": "negative",
+      "sample_text": "this is a new approach",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:15.588288",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 4,
+      "sample_type": "negative",
+      "sample_text": "find another way please",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:16.089597",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 5,
+      "sample_type": "negative",
+      "sample_text": "the fourth way might work",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:16.591052",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 6,
+      "sample_type": "negative",
+      "sample_text": "new methods are needed",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:17.093083",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 7,
+      "sample_type": "negative",
+      "sample_text": "which way should we go",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:17.595351",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 8,
+      "sample_type": "negative",
+      "sample_text": "the new building is way over there",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:18.096869",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 9,
+      "sample_type": "negative",
+      "sample_text": "four ways to improve efficiency",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:18.599642",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 0,
+      "sample_type": "confusing",
+      "sample_text": "the way 4 ward building",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:19.101144",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 1,
+      "sample_type": "confusing",
+      "sample_text": "a new way, for sure",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:19.607677",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 2,
+      "sample_type": "confusing",
+      "sample_text": "way 4 getting things done",
+      "detected": true,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:20.109864",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 3,
+      "sample_type": "confusing",
+      "sample_text": "new way forward please",
+      "detected": true,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:20.610760",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 4,
+      "sample_type": "confusing",
+      "sample_text": "show me the way, 4 real",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:21.111926",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 5,
+      "sample_type": "confusing",
+      "sample_text": "new way, 4 minutes please",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:21.618636",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 6,
+      "sample_type": "confusing",
+      "sample_text": "the way, 4 sure it works",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:22.119871",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 7,
+      "sample_type": "confusing",
+      "sample_text": "new way of doing things, 4 ever",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:22.622277",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 8,
+      "sample_type": "confusing",
+      "sample_text": "way better than 4 options",
+      "detected": false,
+      "should_detect": false
+    },
+    {
+      "timestamp": "2025-09-29T03:25:23.127461",
+      "snr_level": 0,
+      "round": 1,
+      "sample_idx": 9,
+      "sample_type": "confusing",
+      "sample_text": "new way, approximately 4 steps",
+      "detected": true,
+      "should_detect": false
+    }
+  ]
+}

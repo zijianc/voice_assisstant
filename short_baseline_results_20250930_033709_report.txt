@@ -1,0 +1,36 @@
+Baseline Performance Test Report
+==================================================
+
+Test Date: 2025-09-30 03:39:37
+Architecture: Conventional STT → LLM → TTS Pipeline
+Total Samples: 5
+Valid Samples: 5
+Timeouts: 0
+
+Speech → First Response (ms):
+  Count: 5
+  Median: 3187.3ms
+  Mean: 3849.3ms
+  Std Dev: 1595.0ms
+  Min: 2640.9ms
+  Max: 6447.3ms
+  P95: 6013.9ms
+
+Speech → TTS Start (ms):
+  Count: 5
+  Median: 6118.2ms
+  Mean: 8612.2ms
+  Std Dev: 4838.2ms
+  Min: 5595.6ms
+  Max: 17039.6ms
+  P95: 15308.9ms
+
+Total Response Time (ms):
+  Count: 5
+  Median: 16023.2ms
+  Mean: 23532.9ms
+  Std Dev: 17475.0ms
+  Min: 10982.4ms
+  Max: 53327.2ms
+  P95: 47599.2ms
+

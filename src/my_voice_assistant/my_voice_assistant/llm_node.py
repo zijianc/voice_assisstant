@@ -55,12 +55,12 @@ class LLMNode(Node):
         # New: env-driven LLM configuration
         self.llm_model = os.environ.get(
             "LLM_MODEL",
-            "gpt-5-nano-2025-08-07"
+            "gpt-4o-mini"
         )
         try:
-            self.llm_temperature = float(os.environ.get("LLM_TEMPERATURE", "0.6"))
+            self.llm_temperature = float(os.environ.get("LLM_TEMPERATURE", "1"))
         except Exception:
-            self.llm_temperature = 0.6
+            self.llm_temperature = 1
         try:
             self.llm_max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "300"))
         except Exception:
@@ -199,7 +199,7 @@ class LLMNode(Node):
         transcript_lines = [f"{m['role']}: {m['content']}" for m in recent]
         transcript = "\n".join(transcript_lines)
         system_prompt = (
-            "You are a memory summarizer for the Captain voice assistant. "
+            "You are a memory summarizer for the  voice assistant. "
             "Given the previous rolling summary and the latest conversation excerpt, "
             "produce a compact summary in 2-3 sentences focusing on: stable facts about the user, "
             "preferences, constraints, names, and any unresolved tasks or commitments. Avoid ephemeral details."
@@ -216,7 +216,7 @@ class LLMNode(Node):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_payload},
                 ],
-                temperature=0.2,
+                temperature=self.llm_temperature,
                 max_completion_tokens=self.summary_max_tokens,
                 stream=False,
             )
@@ -439,7 +439,7 @@ class LLMNode(Node):
             print("="*60)
             
             # Step 2: Build enhanced system prompt (web search + LLM knowledge only)
-            base_system_prompt = """You are Captain, the friendly voice assistant for the UWA (University of Western Australia) shuttle bus service. Your personality is:
+            base_system_prompt = """You are "New Way 4", an intelligent and helpful campus shuttle assistant for the University of Western Australia (UWA).
 
 ROLE & CONTEXT:
 - You're an onboard AI assistant helping UWA students, staff, and visitors

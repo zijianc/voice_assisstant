@@ -11,3 +11,34 @@ build/
 log/
 .devcontainer/
 *.jpg
+
+# Docker 相关文件
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# 音频输出文件夹
+audio_output/
+
+# 报告模板文件夹
+GENG4412_5512_Final_Report_Template_S2_2025(3)/
+
+# 报告图表文档文件夹
+REPORT_FIGURES_AND_TABLES*
+
+# 临时文件
+*.tmp
+*.temp
+*_tmp.*
+
+# 包管理文件
+package*.json
+node_modules/
+
+# 其他不需要的文件
+.DS_Store
+=3.8.0
+assistant_memory.json
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md

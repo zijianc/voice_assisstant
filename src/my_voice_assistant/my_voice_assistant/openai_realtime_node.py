@@ -47,6 +47,7 @@ class OpenAIRealtimeNode(Node):
             return
             
         self.realtime_model = os.environ.get("REALTIME_MODEL", "gpt-realtime-2025-08-28")
+        #self.realtime_model = os.environ.get("REALTIME_MODEL", "gpt-4o-realtime-preview-2025-06-03")
         self.realtime_voice = os.environ.get("REALTIME_VOICE", "cedar")  # alloy, echo, fable, onyx, nova, shimmer
         self.enable_function_calling = os.environ.get("ENABLE_REALTIME_FUNCTION_CALLING", "1") == "1"
         
@@ -277,7 +278,7 @@ class OpenAIRealtimeNode(Node):
                 headers=headers,
                 protocols=("openai-realtime-v1",),
                 heartbeat=20.0,
-                max_msg_size=10 * 1024 * 1024,
+                max_msg_size=5 * 512 * 512, 
             ) as websocket:
                 self.websocket = websocket
                 self.get_logger().info("✅ Connected to OpenAI Realtime API")

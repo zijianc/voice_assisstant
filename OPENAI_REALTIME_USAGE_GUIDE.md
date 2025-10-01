@@ -65,13 +65,21 @@ export ENABLE_WEB_SEARCH="1"
 
 ## 🔧 功能特性
 
-### 1. **网络搜索集成**
-Realtime 节点集成了完整的网络搜索功能：
+### 1. **ExtendedUWATools集成**
+Realtime 节点集成了完整的校园服务功能：
 
+**基础搜索工具**:
 - `search_web()` - 通用网络搜索
 - `search_uwa_transport()` - UWA交通信息
 - `search_current_weather()` - 实时天气查询
 - `search_uwa_events()` - UWA活动信息
+
+**扩展校园工具** (🆕 Google搜索策略):
+- `search_uwa_locations()` - 校园建筑和设施位置
+- `get_uwa_hours()` - 设施开放时间查询
+- `search_campus_dining()` - 校园餐饮选择
+- `check_parking_availability()` - 停车位信息
+- `find_nearby_services()` - 附近服务设施
 
 ### 2. **ROS2 消息兼容性**
 保持与现有系统的兼容性：
@@ -102,34 +110,67 @@ cd /workspaces/ros2_ws
 
 ### 2. 启动 STT 节点（在新终端）
 ```bash
+# 选择STT节点（推荐TEN VAD）
 cd /workspaces/ros2_ws
-./start_openai_stt.sh
+
+# 传统RMS VAD STT（已更新"new way 4"唤醒词）
+./start_realtime_stt.sh
+
+# 或TEN深度学习VAD STT（更高精度）
+./start_ten_vad_stt.sh
 ```
 
 ### 3. 测试系统
+**自动化测试**:
 ```bash
 cd /workspaces/ros2_ws/src/my_voice_assistant/my_voice_assistant
-python3 test_realtime_api.py
+python3 test_realtime_questions.py
+```
+
+**手动测试**:
+```bash
+# 测试唤醒词和功能
+ros2 topic pub /speech_text std_msgs/String "data: 'new way 4, where is Reid Library?'" --once
+ros2 topic pub /speech_text std_msgs/String "data: 'neway 4, what time does the library close?'" --once
 ```
 
 ## 🧪 测试案例
 
 ### 基础对话测试
 ```
-用户: "Hello Captain, how are you today?"
+用户: "new way 4, how are you today?"
 系统: [流式语音响应] "Hello! I'm doing great, thank you for asking..."
 ```
 
 ### 网络搜索测试
 ```
-用户: "What's the weather like in Perth today?"
-系统: [触发search_current_weather] → [基于实时数据回答]
+用户: "new way 4, what's the weather like in Perth today?"
+系统: [触发search_current_weather] → [基于实时天气数据回答]
 ```
 
-### UWA信息查询
+### 校园信息查询测试
 ```
-用户: "Tell me about UWA libraries"
-系统: [结合内置知识和可能的网络搜索] → [详细回答]
+用户: "new way 4, where is Reid Library?"
+系统: [触发search_uwa_locations] → [Google实时搜索] → [详细位置信息]
+
+用户: "new way 4, what time does the library close?"
+系统: [触发get_uwa_hours] → [Google实时搜索] → [最新开放时间]
+
+用户: "new way 4, where can I get coffee on campus?"
+系统: [触发search_campus_dining] → [Google实时搜索] → [餐饮选择]
+```
+
+### 唤醒词变体测试
+```
+支持的唤醒词变体:
+- "new way 4"
+- "new way four" 
+- "neway 4"
+- "neway four"
+- "nu way 4"
+- "new way for"
+- "neway for"
+等等...
 ```
 
 ### 中断处理测试
@@ -208,11 +249,17 @@ export RCUTILS_LOGGING_SEVERITY_THRESHOLD=DEBUG
 
 ## 🔮 未来扩展
 
+### 已实现功能 (2025年9月28日更新)
+- ✅ **ExtendedUWATools**: 5个校园专用工具完全集成
+- ✅ **Google搜索策略**: 解决静态数据问题，提供实时信息
+- ✅ **唤醒词优化**: "new way 4"变体，提高识别宽容度
+- ✅ **Function Calling**: 完整的网络搜索和校园服务功能
+
 ### 计划功能
 - **多语言支持**: 中文语音输入输出
 - **情感识别**: 基于语音的情感分析
 - **个性化**: 用户偏好学习和适应
-- **高级工具**: 更多专业功能集成
+- **更多工具集成**: 交通、学术、生活服务工具扩展
 
 ### 集成建议
 - **视觉界面**: 配合GUI显示对话状态
@@ -226,6 +273,27 @@ export RCUTILS_LOGGING_SEVERITY_THRESHOLD=DEBUG
 2. 运行测试脚本验证功能
 3. 检查环境配置和依赖
 4. 参考OpenAI官方文档
+
+## 📝 更新日志
+
+### 2025年9月28日 - v2.0 重大更新
+- 🚀 **ExtendedUWATools集成**: 添加5个校园专用工具
+  - `search_uwa_locations()` - 校园建筑位置
+  - `get_uwa_hours()` - 设施开放时间
+  - `search_campus_dining()` - 餐饮服务
+  - `check_parking_availability()` - 停车信息
+  - `find_nearby_services()` - 附近服务
+- 🔍 **Google搜索策略**: 从UWA官网限制搜索转换为Google实时搜索
+- 📱 **唤醒词升级**: 从"nUWAy"更新为"new way 4"，支持多种变体
+- 🎯 **宽容度提升**: 降低识别阈值从0.86到0.75，提高识别成功率
+- 📊 **工具验证**: 每个功能提供4+条Google验证方法指导
+- 🐛 **问题修复**: 解决时间不准确、温度信息错误等用户反馈问题
+
+### 初始版本
+- ⚡ OpenAI Realtime API基础集成
+- 🎙️ 低延迟语音对话功能
+- 🔄 ROS2消息兼容性
+- 🌐 基础网络搜索工具
 
 ---
 
